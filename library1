@@ -261,99 +261,100 @@ function Library:CreateWindow(options)
     ------------------------------------------------------------------
     -- Dock
     ------------------------------------------------------------------
--- Dock
-local tabBar = Instance.new("Frame")
-tabBar.Name = "TabBar"
-tabBar.BackgroundColor3 = selfLib.Theme.Background
-tabBar.BorderSizePixel = 0
-tabBar.Size = UDim2.new(0, 420, 0, 56)
-tabBar.AnchorPoint = Vector2.new(0.5, 1)
-tabBar.Position = UDim2.new(0.5, 0, 1, -4)
-tabBar.Parent = barGui
+    ------------------------------------------------------------------
+    -- Dock
+    ------------------------------------------------------------------
+    local tabBar = Instance.new("Frame")
+    tabBar.Name = "TabBar"
+    tabBar.BackgroundColor3 = selfLib.Theme.Background
+    tabBar.BorderSizePixel = 0
+    tabBar.Size = UDim2.new(0, 420, 0, 56)
+    tabBar.AnchorPoint = Vector2.new(0.5, 1)
+    tabBar.Position = UDim2.new(0.5, 0, 1, -4)
+    tabBar.Parent = barGui
 
-local tabBarCorner = Instance.new("UICorner")
-tabBarCorner.Parent = tabBar
+    local tabBarCorner = Instance.new("UICorner")
+    tabBarCorner.Parent = tabBar
 
--- Holder now fills the bar and is centered
-local tabHolder = Instance.new("Frame")
-tabHolder.Name = "TabHolder"
-tabHolder.BackgroundTransparency = 1
-tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-tabHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
-tabHolder.Size = UDim2.new(1, 0, 1, 0)
-tabHolder.Parent = tabBar
-thisWindow.TabBar = tabHolder
+    -- Holder fills the bar and is centered; icons are centered by UIListLayout
+    local tabHolder = Instance.new("Frame")
+    tabHolder.Name = "TabHolder"
+    tabHolder.BackgroundTransparency = 1
+    tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+    tabHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
+    tabHolder.Size = UDim2.new(1, 0, 1, 0)
+    tabHolder.Parent = tabBar
+    thisWindow.TabBar = tabHolder
 
-local tabList = Instance.new("UIListLayout")
-tabList.FillDirection = Enum.FillDirection.Horizontal
-tabList.SortOrder = Enum.SortOrder.LayoutOrder
-tabList.Padding = UDim.new(0, 6)
-tabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-tabList.VerticalAlignment   = Enum.VerticalAlignment.Center
-tabList.Parent = tabHolder
+    local tabList = Instance.new("UIListLayout")
+    tabList.FillDirection = Enum.FillDirection.Horizontal
+    tabList.SortOrder = Enum.SortOrder.LayoutOrder
+    tabList.Padding = UDim.new(0, 6)
+    tabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabList.VerticalAlignment   = Enum.VerticalAlignment.Center
+    tabList.Parent = tabHolder
 
-applyCornerRadius(corner, thisWindow)
-applyCornerRadius(contentCorner, thisWindow)
-applyCornerRadius(tabBarCorner, thisWindow, 1)
+    applyCornerRadius(corner, thisWindow)
+    applyCornerRadius(contentCorner, thisWindow)
+    applyCornerRadius(tabBarCorner, thisWindow, 1)
 
-function thisWindow:ApplyPadding()
-    local pad = self.Padding
-    for _, tabObj in pairs(self.Tabs) do
-        local content = tabObj.Content
-        if content and content.Parent then
-            content.Size = UDim2.new(1, -pad, 1, -pad)
-            content.Position = UDim2.new(0, pad / 2, 0, pad / 2)
-            local list = content:FindFirstChildOfClass("UIListLayout")
-            if list then
-                list.Padding = UDim.new(0, math.max(2, pad / 3))
+    function thisWindow:ApplyPadding()
+        local pad = self.Padding
+        for _, tabObj in pairs(self.Tabs) do
+            local content = tabObj.Content
+            if content and content.Parent then
+                content.Size = UDim2.new(1, -pad, 1, -pad)
+                content.Position = UDim2.new(0, pad / 2, 0, pad / 2)
+                local list = content:FindFirstChildOfClass("UIListLayout")
+                if list then
+                    list.Padding = UDim.new(0, math.max(2, pad / 3))
+                end
             end
         end
     end
-end
 
--- NEW: bar width = content width + side padding; icons are centered by layout
-local function updateTabHolderSize()
-    local contentWidth = tabList.AbsoluteContentSize.X
-    local dockScale    = thisWindow.DockScale or 1
+    -- Dock sizing and alignment (bar stays 56px tall; we offset buttons instead)
+    local function updateTabHolderSize()
+        local contentWidth = tabList.AbsoluteContentSize.X
+        local dockScale    = thisWindow.DockScale or 1
 
-    local barY      = -20               -- distance from bottom of screen
-    local barHeight = 56 * dockScale
-    local sidePad   = 16
-    local minWidth  = 90
+        local barY      = -20
+        local barHeight = 56 * dockScale
 
-    local barWidth = math.max(contentWidth + sidePad * 2, minWidth) * dockScale
+        local sidePad   = 16
+        local minWidth  = 90
 
-    tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
+        local barWidth = math.max(contentWidth + sidePad * 2, minWidth) * dockScale
 
-    local align  = thisWindow.TabBarAlignment
-    local offset = thisWindow.TabBarOffset
+        tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
 
-    if align == "Left" then
-        tabBar.AnchorPoint = Vector2.new(0, 1)
-        tabBar.Position    = UDim2.new(0, 10 + offset, 1, barY)
-    elseif align == "Right" then
-        tabBar.AnchorPoint = Vector2.new(1, 1)
-        tabBar.Position    = UDim2.new(1, -10 + offset, 1, barY)
-    else
-        tabBar.AnchorPoint = Vector2.new(0.5, 1)
-        tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
+        local align  = thisWindow.TabBarAlignment
+        local offset = thisWindow.TabBarOffset
+
+        if align == "Left" then
+            tabBar.AnchorPoint = Vector2.new(0, 1)
+            tabBar.Position    = UDim2.new(0, 10 + offset, 1, barY)
+        elseif align == "Right" then
+            tabBar.AnchorPoint = Vector2.new(1, 1)
+            tabBar.Position    = UDim2.new(1, -10 + offset, 1, barY)
+        else
+            tabBar.AnchorPoint = Vector2.new(0.5, 1)
+            tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
+        end
+
+        tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+        tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
+        tabHolder.Size        = UDim2.new(1, 0, 1, 0)
+
+        thisWindow.HomeTabBarPos = tabBar.Position
     end
 
-    -- Holder stays full bar; center alignment now matches bar visually
-    tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-    tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
-    tabHolder.Size        = UDim2.new(1, 0, 1, 0)
+    thisWindow.UpdateTabDock = updateTabHolderSize
+    tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
+    updateTabHolderSize()
 
-    thisWindow.HomeTabBarPos = tabBar.Position
-end
-
-thisWindow.UpdateTabDock = updateTabHolderSize
-tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
-updateTabHolderSize()
-
--- initial home positions
-thisWindow.HomeContainerPos = thisWindow.Container.Position
-thisWindow.HomeTabBarPos    = tabBar.Position
+    thisWindow.HomeContainerPos = thisWindow.Container.Position
+    thisWindow.HomeTabBarPos    = tabBar.Position
 
     ------------------------------------------------------------------
     -- Helpers for icon animation
@@ -679,20 +680,27 @@ end
 
 function Window:AddTab(name)
     local theme = self.Library.Theme
-    local pad = self.Padding
+    local pad   = self.Padding
     local scale = self.DockScale or 1
 
     local tabButton = Instance.new("TextButton")
-    tabButton.Name = name .. "_TabButton"
+    tabButton.Name   = name .. "_TabButton"
     tabButton.Parent = self.TabBar
+
+    -- Button size
     tabButton.Size = UDim2.new(0, 40 * scale, 0, 40 * scale)
+
+    -- Center with a small negative Y offset so it sits in the visual middle
+    tabButton.AnchorPoint = Vector2.new(0.5, 0.5)
+    tabButton.Position    = UDim2.new(0.5, 0, 0.5, -4)  -- tweak -4 if needed
+
     tabButton.BackgroundColor3 = theme.TabInactive
-    tabButton.BorderSizePixel = 0
-    tabButton.AutoButtonColor = true
-    tabButton.Font = Enum.Font.GothamBold
-    tabButton.TextSize = 16 * scale
-    tabButton.Text = getInitials(name)
-    tabButton.TextColor3 = theme.Text
+    tabButton.BorderSizePixel  = 0
+    tabButton.AutoButtonColor  = true
+    tabButton.Font             = Enum.Font.GothamBold
+    tabButton.TextSize         = 16 * scale
+    tabButton.Text             = getInitials(name)
+    tabButton.TextColor3       = theme.Text
 
     local buttonCorner = Instance.new("UICorner")
     applyCornerRadius(buttonCorner, self, 0.8)
@@ -743,7 +751,6 @@ function Window:AddTab(name)
 
     return tabObj
 end
-
 ----------------------------------------------------------------------
 -- Tab methods
 ----------------------------------------------------------------------
