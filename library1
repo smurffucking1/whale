@@ -304,12 +304,12 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- Reworked: bar width matches content width * DockScale (+ small padding)
+    -- Dock width mostly matches button content * DockScale
     local function updateTabHolderSize()
         local contentWidth = tabList.AbsoluteContentSize.X
         local dockScale = thisWindow.DockScale or 1
-        local outerPadding = 12  -- background margin around icons
-        local minWidth = 90      -- minimal bar width so 1–2 icons still look ok
+        local outerPadding = 12
+        local minWidth = 90
         local baseHeight = 56
 
         local targetWidth = math.max(contentWidth + outerPadding * 2, minWidth)
@@ -334,7 +334,6 @@ function Library:CreateWindow(options)
             tabBar.Position = UDim2.new(0.5, offset, 1, -4)
         end
 
-        -- update home tab bar position whenever layout changes
         thisWindow.HomeTabBarPos = tabBar.Position
     end
 
@@ -342,7 +341,6 @@ function Library:CreateWindow(options)
     tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
     updateTabHolderSize()
 
-    -- initial home positions
     thisWindow.HomeContainerPos = thisWindow.Container.Position
     thisWindow.HomeTabBarPos    = tabBar.Position
 
@@ -356,19 +354,17 @@ function Library:CreateWindow(options)
 
         win.Blur.Enabled = true
 
-        -- Ensure dock width matches current config before animating
         if win.UpdateTabDock then
             win:UpdateTabDock()
         end
 
         local targetPos = win.HomeContainerPos or win.Container.Position
-        local barTarget = win.HomeTabBarPos    or win.TabBar.Position
+        local barTarget = win.HomeTabBarPos or win.TabBar.Position
 
         if not win.AnimateOnOpen then
             win.Container.Position = targetPos
             win.TabBar.Position    = barTarget
             win.Blur.Size = 18
-            -- refresh homes
             win.HomeContainerPos = win.Container.Position
             win.HomeTabBarPos    = win.TabBar.Position
             return
@@ -376,19 +372,18 @@ function Library:CreateWindow(options)
 
         win.Blur.Size = 0
 
-        local tweenInfoMain = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local fromPos = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
-        win.Container.Position = fromPos
-        TweenService:Create(win.Container, tweenInfoMain, { Position = targetPos }):Play()
+        local mainInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local fromMain = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
+        win.Container.Position = fromMain
+        TweenService:Create(win.Container, mainInfo, { Position = targetPos }):Play()
 
-        local tweenInfoBar = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local barInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         local barFrom = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
         win.TabBar.Position = barFrom
-        TweenService:Create(win.TabBar, tweenInfoBar, { Position = barTarget }):Play()
+        TweenService:Create(win.TabBar, barInfo, { Position = barTarget }):Play()
 
         TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
 
-        -- After animation, store the new "home" positions so reopen uses the correct ones
         task.delay(0.22, function()
             if win.Container then
                 win.HomeContainerPos = win.Container.Position
@@ -533,7 +528,6 @@ end
 function Window:SetDockScale(scale)
     self.DockScale = math.clamp(tonumber(scale) or 1, 0.6, 1.8)
 
-    -- button scaling
     for _, tabObj in pairs(self.Tabs) do
         local btn = tabObj.Button
         if btn then
@@ -543,7 +537,6 @@ function Window:SetDockScale(scale)
         end
     end
 
-    -- bar width is handled by UpdateTabDock using AbsoluteContentSize
     if self.UpdateTabDock then
         self:UpdateTabDock()
     end
