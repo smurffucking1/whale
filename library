@@ -348,8 +348,8 @@ function Library:CreateWindow(options)
     updateTabHolderSize()
 
     -- initial home positions
-    thisWindow.HomeContainerPos = thisWindow.Container.Position
-    thisWindow.HomeTabBarPos    = tabBar.Position
+    --thisWindow.HomeContainerPos = thisWindow.Container.Position
+    --thisWindow.HomeTabBarPos    = tabBar.Position
 
     ------------------------------------------------------------------
     -- Animations using home positions
@@ -559,6 +559,18 @@ function Window:SetAnchorOffsetY(offset)
     self.AnchorOffsetY = tonumber(offset) or self.AnchorOffsetY or 0
     if self.SetSize then
         self:SetSize(self.Width, self.Height)
+    end
+end
+
+function Window:RefreshHomePositions()
+    if self.Container then
+        self.HomeContainerPos = self.Container.Position
+    end
+    if self.BarGui then
+        local barFrame = self.BarGui:FindFirstChild("TabBar", true)
+        if barFrame then
+            self.HomeTabBarPos = barFrame.Position
+        end
     end
 end
 
