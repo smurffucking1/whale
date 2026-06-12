@@ -414,10 +414,15 @@ function Library:CreateWindow(options)
         local iconTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
         for _, btn in ipairs(buttons) do
+            -- true layout target
             local target = btn.Position
-            btn.Position = UDim2.new(target.X.Scale, target.X.Offset, 1.5, target.Y.Offset)
+
+            -- start below the bar (same X and Y offset, only scale changed)
+            btn.Position = UDim2.new(target.X.Scale, target.X.Offset, target.Y.Scale + 1, target.Y.Offset)
+
+            -- tween back to the exact layout position
             TweenService:Create(btn, iconTweenInfo, {
-                Position = UDim2.new(target.X.Scale, target.X.Offset, 0.5, target.Y.Offset)
+                Position = target
             }):Play()
         end
     end
