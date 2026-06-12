@@ -19,31 +19,31 @@ Library.__index = Library
 -- Themes
 Library.Themes = {
     Dark = {
-        Background   = Color3.fromRGB(20, 20, 25),
-        Accent       = Color3.fromRGB(65, 130, 255),
-        Accent2      = Color3.fromRGB(60, 60, 80),
-        Text         = Color3.fromRGB(240, 240, 255),
-        SubText      = Color3.fromRGB(170, 170, 190),
-        TabInactive  = Color3.fromRGB(35, 35, 45),
-        TabActive    = Color3.fromRGB(65, 130, 255),
+        Background  = Color3.fromRGB(20, 20, 25),
+        Accent      = Color3.fromRGB(65, 130, 255),
+        Accent2     = Color3.fromRGB(60, 60, 80),
+        Text        = Color3.fromRGB(240, 240, 255),
+        SubText     = Color3.fromRGB(170, 170, 190),
+        TabInactive = Color3.fromRGB(35, 35, 45),
+        TabActive   = Color3.fromRGB(65, 130, 255),
     },
     Light = {
-        Background   = Color3.fromRGB(235, 235, 240),
-        Accent       = Color3.fromRGB(50, 120, 255),
-        Accent2      = Color3.fromRGB(210, 210, 225),
-        Text         = Color3.fromRGB(20, 20, 30),
-        SubText      = Color3.fromRGB(80, 80, 100),
-        TabInactive  = Color3.fromRGB(210, 210, 225),
-        TabActive    = Color3.fromRGB(50, 120, 255),
+        Background  = Color3.fromRGB(235, 235, 240),
+        Accent      = Color3.fromRGB(50, 120, 255),
+        Accent2     = Color3.fromRGB(210, 210, 225),
+        Text        = Color3.fromRGB(20, 20, 30),
+        SubText     = Color3.fromRGB(80, 80, 100),
+        TabInactive = Color3.fromRGB(210, 210, 225),
+        TabActive   = Color3.fromRGB(50, 120, 255),
     },
     AMOLED = {
-        Background   = Color3.fromRGB(0, 0, 0),
-        Accent       = Color3.fromRGB(0, 170, 255),
-        Accent2      = Color3.fromRGB(25, 25, 25),
-        Text         = Color3.fromRGB(255, 255, 255),
-        SubText      = Color3.fromRGB(130, 130, 130),
-        TabInactive  = Color3.fromRGB(10, 10, 10),
-        TabActive    = Color3.fromRGB(0, 170, 255),
+        Background  = Color3.fromRGB(0, 0, 0),
+        Accent      = Color3.fromRGB(0, 170, 255),
+        Accent2     = Color3.fromRGB(25, 25, 25),
+        Text        = Color3.fromRGB(255, 255, 255),
+        SubText     = Color3.fromRGB(130, 130, 130),
+        TabInactive = Color3.fromRGB(10, 10, 10),
+        TabActive   = Color3.fromRGB(0, 170, 255),
     },
 }
 
@@ -94,6 +94,7 @@ end
 -- MAIN
 function Library:CreateWindow(options)
     options = options or {}
+
     local selfLib = setmetatable({}, Library)
 
     local player = Players.LocalPlayer
@@ -134,35 +135,34 @@ function Library:CreateWindow(options)
     barGui.Parent = playerGui
 
     local thisWindow = setmetatable({
-        Library        = selfLib,
-        MainGui        = mainGui,
-        BarGui         = barGui,
-        ClockGui       = nil,
-        Root           = nil,
-        Container      = nil,
-        TabBar         = nil,
-        ContentArea    = nil,
-        Tabs           = {},
-        ActiveTab      = nil,
-        Connections    = {},
-        DestroyKey     = options.DestroyKey or Enum.KeyCode.RightShift,
-        Blur           = blur,
-
-        TabBarAlignment = "Center",
-        TabBarOffset    = 0,
-
-        Padding        = 10,
-        CornerRadius   = 18,
-        DockScale      = 1,
-        AnimateOnOpen  = true,
-        Width          = 500,
-        Height         = 360,
-
-        AnchorMode     = "Left",
-        AnchorOffsetX  = 35,
+        Library          = selfLib,
+        MainGui          = mainGui,
+        BarGui           = barGui,
+        ClockGui         = nil,
+        ClockBar         = nil,  -- NEW: store clock frame
+        Root             = nil,
+        Container        = nil,
+        TabBar           = nil,
+        ContentArea      = nil,
+        Tabs             = {},
+        ActiveTab        = nil,
+        Connections      = {},
+        DestroyKey       = options.DestroyKey or Enum.KeyCode.RightShift,
+        Blur             = blur,
+        TabBarAlignment  = "Center",
+        TabBarOffset     = 0,
+        Padding          = 10,
+        CornerRadius     = 18,
+        DockScale        = 1,
+        AnimateOnOpen    = true,
+        Width            = 500,
+        Height           = 360,
+        AnchorMode       = "Left",
+        AnchorOffsetX    = 35,
+        ClockScale       = 1,   -- NEW: default clock scale
     }, Window)
 
-    -- Clock GUI (separate, top-right of screen)
+    -- Clock GUI (top-right)
     local clockGui = Instance.new("ScreenGui")
     clockGui.Name = (options.Title or "MyUI") .. "_Clock"
     clockGui.IgnoreGuiInset = true
@@ -197,6 +197,10 @@ function Library:CreateWindow(options)
     clockLabel.Text = "00:00"
 
     thisWindow.ClockGui = clockGui
+    thisWindow.ClockBar = clockBar   -- NEW: store bar
+
+    -- NEW: apply initial clock scale
+    thisWindow:SetClockScale(thisWindow.ClockScale)
 
     task.spawn(function()
         while clockGui.Parent do
@@ -216,9 +220,8 @@ function Library:CreateWindow(options)
     thisWindow.Container = container
 
     function thisWindow:SetSize(width, height)
-        self.Width = math.max(300, tonumber(width) or self.Width)
+        self.Width  = math.max(300, tonumber(width) or self.Width)
         self.Height = math.max(220, tonumber(height) or self.Height)
-
         if self.Container then
             self.Container.Size = UDim2.new(0, self.Width, 0, self.Height)
             if self.AnchorMode == "Left" then
@@ -335,6 +338,7 @@ function Library:CreateWindow(options)
 
         local align = thisWindow.TabBarAlignment
         local offset = thisWindow.TabBarOffset
+
         if align == "Left" then
             tabBar.AnchorPoint = Vector2.new(0, 1)
             tabBar.Position = UDim2.new(0, 10 + offset, 1, -4)
@@ -351,7 +355,7 @@ function Library:CreateWindow(options)
     tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
     updateTabHolderSize()
 
-    -- toggle key, also toggles clock
+    -- toggle key (also toggles clock)
     table.insert(thisWindow.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
         if input.KeyCode == thisWindow.DestroyKey then
@@ -372,7 +376,7 @@ function Library:CreateWindow(options)
         local currentPos = container.Position
         local fromPos = UDim2.new(1.2, 0, 0.5, -thisWindow.Height / 2)
         container.Position = fromPos
-        local tween = TweenService:Create(container, tweenInfo, {Position = currentPos})
+        local tween = TweenService:Create(container, tweenInfo, { Position = currentPos })
         tween:Play()
     end
 
@@ -381,7 +385,7 @@ function Library:CreateWindow(options)
         local endPos = tabBar.Position
         local startPos = UDim2.new(endPos.X.Scale, endPos.X.Offset, 1, 60)
         tabBar.Position = startPos
-        local tween = TweenService:Create(tabBar, tweenInfo, {Position = endPos})
+        local tween = TweenService:Create(tabBar, tweenInfo, { Position = endPos })
         tween:Play()
     end
 
@@ -392,6 +396,7 @@ function Library:CreateWindow(options)
 end
 
 -- Window methods
+
 function Window:SetToggleKey(keyCode)
     self.DestroyKey = keyCode
 end
@@ -448,6 +453,14 @@ function Window:SetCornerRadius(pixels)
             applyCornerRadius(barCorner, self, 1)
         end
     end
+
+    -- also apply to clock bar corner if present
+    if self.ClockBar then
+        local clkCorner = self.ClockBar:FindFirstChildOfClass("UICorner")
+        if clkCorner then
+            applyCornerRadius(clkCorner, self, 0.8)
+        end
+    end
 end
 
 function Window:SetDockScale(scale)
@@ -484,6 +497,22 @@ function Window:SetAnchorOffsetX(offset)
     self:SetSize(self.Width, self.Height)
 end
 
+-- NEW: Clock scale setter
+function Window:SetClockScale(scale)
+    scale = tonumber(scale) or 1
+    scale = math.clamp(scale, 0.5, 2)  -- sane range
+    self.ClockScale = scale
+
+    if not self.ClockBar then return end
+
+    local uiScale = self.ClockBar:FindFirstChildOfClass("UIScale")
+    if not uiScale then
+        uiScale = Instance.new("UIScale")
+        uiScale.Parent = self.ClockBar
+    end
+    uiScale.Scale = scale
+end
+
 function Window:SaveConfig(name, data)
     local store = getConfigStore()
     store[name or "default"] = data
@@ -496,7 +525,9 @@ end
 
 function Window:Destroy()
     for _, conn in ipairs(self.Connections) do
-        if conn.Connected then conn:Disconnect() end
+        if conn.Connected then
+            conn:Disconnect()
+        end
     end
     table.clear(self.Connections)
 
@@ -519,13 +550,11 @@ end
 function Window:ShowTab(tab)
     local theme = self.Library.Theme
     if self.ActiveTab == tab then return end
-
     for _, t in pairs(self.Tabs) do
         t.Content.Visible = false
         t.Button.BackgroundColor3 = theme.TabInactive
         t.Button.TextColor3 = theme.SubText
     end
-
     tab.Content.Visible = true
     tab.Button.BackgroundColor3 = theme.TabActive
     tab.Button.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -577,9 +606,9 @@ function Window:AddTab(name)
     list.Parent = contentFrame
 
     local tabObj = setmetatable({
-        Window = self,
-        Name = name,
-        Button = tabButton,
+        Window  = self,
+        Name    = name,
+        Button  = tabButton,
         Content = contentFrame,
     }, Tab)
 
@@ -679,6 +708,7 @@ function Tab:AddToggle(text, default, callback)
     corner.Parent = button
 
     local state = default and true or false
+
     local function update()
         if state then
             button.BackgroundColor3 = theme.Accent
@@ -852,6 +882,7 @@ end
 
 function Tab:AddKeybind(text, initialKey, callback)
     callback = callback or function() end
+
     local theme = self.Window.Library.Theme
 
     local holder = Instance.new("Frame")
@@ -929,6 +960,7 @@ end
 
 function Tab:AddTextBox(labelText, placeholder, defaultText, onSubmit)
     onSubmit = onSubmit or function() end
+
     local theme = self.Window.Library.Theme
 
     local holder = Instance.new("Frame")
