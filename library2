@@ -420,7 +420,7 @@ local function playOpenAnimation(win)
     end
 
     -- After all tweens should be done, force a final dock layout update
-    task.delay(0.25, function()
+    task.delay(0.5, function()
         if win.UpdateTabDock then
             win:UpdateTabDock()
         end
