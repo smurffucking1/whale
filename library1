@@ -348,43 +348,73 @@ function Library:CreateWindow(options)
     updateTabHolderSize()
 
     -- initial home positions
-    --thisWindow.HomeContainerPos = thisWindow.Container.Position
-    --thisWindow.HomeTabBarPos    = tabBar.Position
+    thisWindow.HomeContainerPos = thisWindow.Container.Position
+    thisWindow.HomeTabBarPos    = tabBar.Position
 
     ------------------------------------------------------------------
     -- Animations using home positions
     ------------------------------------------------------------------
-local function playOpenAnimation(win)
-    win.MainGui.Enabled = true
-    win.BarGui.Enabled = true
-    if win.ClockGui then win.ClockGui.Enabled = true end
+    local function playOpenAnimation(win)
+        win.MainGui.Enabled = true
+        win.BarGui.Enabled = true
+        if win.ClockGui then win.ClockGui.Enabled = true end
 
-    win.Blur.Enabled = true
+        win.Blur.Enabled = true
 
-    local targetPos = win.HomeContainerPos or win.Container.Position
-    local barTarget = win.HomeTabBarPos    or win.TabBar.Position
+        local targetPos = win.HomeContainerPos or win.Container.Position
+        local barTarget = win.HomeTabBarPos    or win.TabBar.Position
 
-    if not win.AnimateOnOpen then
-        win.Container.Position = targetPos
-        win.TabBar.Position    = barTarget
-        win.Blur.Size = 18
-        return
+        if not win.AnimateOnOpen then
+            win.Container.Position = targetPos
+            win.TabBar.Position    = barTarget
+            win.Blur.Size = 18
+            return
+        end
+
+        win.Blur.Size = 0
+
+        local tweenInfoMain = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local fromPos = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
+        win.Container.Position = fromPos
+        TweenService:Create(win.Container, tweenInfoMain, { Position = targetPos }):Play()
+
+        local tweenInfoBar = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local barFrom = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
+        win.TabBar.Position = barFrom
+        TweenService:Create(win.TabBar, tweenInfoBar, { Position = barTarget }):Play()
+
+        TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
     end
 
-    win.Blur.Size = 0
+    local function playCloseAnimation(win)
+        if not win.AnimateOnOpen then
+            win.MainGui.Enabled = false
+            win.BarGui.Enabled = false
+            if win.ClockGui then win.ClockGui.Enabled = false end
+            win.Blur.Enabled = false
+            win.Blur.Size = 0
+            return
+        end
 
-    local tweenInfoMain = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local fromPos = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
-    win.Container.Position = fromPos
-    TweenService:Create(win.Container, tweenInfoMain, { Position = targetPos }):Play()
+        local tweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-    local tweenInfoBar = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local barFrom = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
-    win.TabBar.Position = barFrom
-    TweenService:Create(win.TabBar, tweenInfoBar, { Position = barTarget }):Play()
+        local endPosContainer = UDim2.new(1.2, 0, win.Container.Position.Y.Scale, win.Container.Position.Y.Offset)
+        TweenService:Create(win.Container, tweenInfo, { Position = endPosContainer }):Play()
 
-    TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
-end
+        local endPosTab = UDim2.new(win.TabBar.Position.X.Scale, win.TabBar.Position.X.Offset, 1, 60)
+        TweenService:Create(win.TabBar, tweenInfo, { Position = endPosTab }):Play()
+
+        TweenService:Create(win.Blur, tweenInfo, { Size = 0 }):Play()
+
+        task.delay(tweenInfo.Time, function()
+            win.MainGui.Enabled = false
+            win.BarGui.Enabled = false
+            if win.ClockGui then win.ClockGui.Enabled = false end
+            win.Blur.Enabled = false
+            win.Blur.Size = 0
+        end)
+    end
+
     ------------------------------------------------------------------
     -- Toggle key with IsOpen flag
     ------------------------------------------------------------------
@@ -529,18 +559,6 @@ function Window:SetAnchorOffsetY(offset)
     self.AnchorOffsetY = tonumber(offset) or self.AnchorOffsetY or 0
     if self.SetSize then
         self:SetSize(self.Width, self.Height)
-    end
-end
-
-function Window:RefreshHomePositions()
-    if self.Container then
-        self.HomeContainerPos = self.Container.Position
-    end
-    if self.BarGui then
-        local barFrame = self.BarGui:FindFirstChild("TabBar", true)
-        if barFrame then
-            self.HomeTabBarPos = barFrame.Position
-        end
     end
 end
 
