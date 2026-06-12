@@ -219,24 +219,26 @@ function Library:CreateWindow(options)
     container.Parent = mainGui
     thisWindow.Container = container
 
-    function thisWindow:SetSize(width, height)
-        self.Width  = math.max(300, tonumber(width) or self.Width)
-        self.Height = math.max(220, tonumber(height) or self.Height)
-        if self.Container then
-            self.Container.Size = UDim2.new(0, self.Width, 0, self.Height)
-            if self.AnchorMode == "Left" then
-                self.Container.Position = UDim2.new(
-                    0, self.AnchorOffsetX,
-                    0.5, -self.Height / 2
-                )
-            else
-                self.Container.Position = UDim2.new(
-                    0.5, -self.Width / 2,
-                    0.5, -self.Height / 2
-                )
-            end
+function thisWindow:SetSize(width, height)
+    self.Width  = math.max(300, tonumber(width) or self.Width)
+    self.Height = math.max(220, tonumber(height) or self.Height)
+    self.AnchorOffsetY = self.AnchorOffsetY or 0
+
+    if self.Container then
+        self.Container.Size = UDim2.new(0, self.Width, 0, self.Height)
+        if self.AnchorMode == "Left" then
+            self.Container.Position = UDim2.new(
+                0, self.AnchorOffsetX,
+                0.5, -self.Height / 2 + self.AnchorOffsetY
+            )
+        else
+            self.Container.Position = UDim2.new(
+                0.5, -self.Width / 2,
+                0.5, -self.Height / 2 + self.AnchorOffsetY
+            )
         end
     end
+end
 
     function thisWindow:SetWidth(w)
         self:SetSize(w, self.Height)
@@ -494,6 +496,11 @@ end
 
 function Window:SetAnchorOffsetX(offset)
     self.AnchorOffsetX = tonumber(offset) or self.AnchorOffsetX
+    self:SetSize(self.Width, self.Height)
+end
+
+function Window:SetAnchorOffsetY(offset)
+    self.AnchorOffsetY = tonumber(offset) or self.AnchorOffsetY or 0
     self:SetSize(self.Width, self.Height)
 end
 
