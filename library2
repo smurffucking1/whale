@@ -314,29 +314,63 @@ function Library:CreateWindow(options)
     end
 
     -- Dock sizing and alignment (bar stays 56px tall; we offset buttons instead)
--- Dock sizing and alignment (even edge padding around apps)
+-- Dock sizing and alignment with truly equal edge padding
 local function updateTabHolderSize()
-    local contentWidth = tabList.AbsoluteContentSize.X
-    local dockScale    = thisWindow.DockScale or 1
+    local dockScale = thisWindow.DockScale or 1
 
-    -- How far above the bottom of the screen the bar sits
-    local barY = -20
+    -- Get all buttons
+    local buttons = {}
+    for _, child in ipairs(tabHolder:GetChildren()) do
+        if child:IsA("TextButton") then
+            table.insert(buttons, child)
+        end
+    end
 
-    -- Button height (40px) and bar height (keep your existing 56px)
-    local buttonHeight = 40 * dockScale
-    local barHeight    = 56 * dockScale
+    -- If no buttons yet, just keep current size/position
+    if #buttons == 0 then
+        return
+    end
 
-    -- Exact padding between outermost button and bar edge (in pixels)
-    local sidePadding  = 16
+    -- Force layout update
+    tabList:ApplyLayout()
 
-    -- Bar width = total app width + left padding + right padding
-    local baseWidth    = math.max(contentWidth + sidePadding * 2, 40)  -- 40 = minimum apps width
-    local barWidth     = baseWidth * dockScale
+    -- Find leftmost and rightmost button positions in holder space
+    local holderAbsPos  = tabHolder.AbsolutePosition.X
+    local holderAbsSize = tabHolder.AbsoluteSize.X
 
-    -- Apply size
+    local leftEdge  = math.huge
+    local rightEdge = -math.huge
+
+    for _, btn in ipairs(buttons) do
+        local absX  = btn.AbsolutePosition.X
+        local width = btn.AbsoluteSize.X
+        local btnLeft  = absX - holderAbsPos
+        local btnRight = btnLeft + width
+
+        if btnLeft < leftEdge then
+            leftEdge = btnLeft
+        end
+        if btnRight > rightEdge then
+            rightEdge = btnRight
+        end
+    end
+
+    local appsWidth = math.max(rightEdge - leftEdge, 0)
+
+    -- Desired padding from outermost app to bar edge (in pixels)
+    local sidePadding = 16
+
+    -- Bar width = apps width + padding on both sides
+    local barWidthPixels = appsWidth + sidePadding * 2
+    local barWidth       = barWidthPixels * dockScale
+
+    -- Keep your existing bar height and Y offset
+    local barHeight = 56 * dockScale
+    local barY      = -20
+
     tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
 
-    -- Align bar itself (left/center/right) using its width
+    -- Align the bar (left/center/right)
     local align  = thisWindow.TabBarAlignment
     local offset = thisWindow.TabBarOffset
 
@@ -351,7 +385,7 @@ local function updateTabHolderSize()
         tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
     end
 
-    -- Holder fills the bar; apps are centered by UIListLayout
+    -- Holder fills the bar and is centered
     tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
     tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
     tabHolder.Size        = UDim2.new(1, 0, 1, 0)
