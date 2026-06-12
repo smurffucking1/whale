@@ -192,7 +192,7 @@ function Library:CreateWindow(options)
     container.Name = "MainContainer"
     container.BackgroundTransparency = 1
     container.BorderSizePixel = 0
-    container.AnchorPoint = Vector2.new(0, 0)
+    container.AnchorPoint = Vector2.new(0, 0.5) -- will be set properly in SetSize
     container.Parent = mainGui
     thisWindow.Container = container
 
@@ -203,20 +203,24 @@ function Library:CreateWindow(options)
 
         if self.Container then
             self.Container.Size = UDim2.new(0, self.Width, 0, self.Height)
+
             if self.AnchorMode == "Left" then
-                self.Container.Position = UDim2.new(
+                -- Left side: X from left, Y centered (+ offset)
+                self.Container.AnchorPoint = Vector2.new(0, 0.5)
+                self.Container.Position    = UDim2.new(
                     0, self.AnchorOffsetX,
-                    0.5, -self.Height / 2 + self.AnchorOffsetY
+                    0.5, self.AnchorOffsetY
                 )
             else
-                self.Container.Position = UDim2.new(
-                    0.5, -self.Width / 2,
-                    0.5, -self.Height / 2 + self.AnchorOffsetY
+                -- Center: full center (+ offset)
+                self.Container.AnchorPoint = Vector2.new(0.5, 0.5)
+                self.Container.Position    = UDim2.new(
+                    0.5, 0,
+                    0.5, self.AnchorOffsetY
                 )
             end
         end
 
-        -- Update home position when size/anchor changes
         self.HomeContainerPos = self.Container.Position
     end
 
@@ -263,7 +267,7 @@ function Library:CreateWindow(options)
     tabBar.BorderSizePixel = 0
     tabBar.Size = UDim2.new(0, 420, 0, 56)
     tabBar.AnchorPoint = Vector2.new(0.5, 1)
-    tabBar.Position = UDim2.new(0.5, 0, 1, -4)
+    tabBar.Position = UDim2.new(0.5, 0, 1, -20)
     tabBar.Parent = barGui
 
     local tabBarCorner = Instance.new("UICorner")
@@ -304,35 +308,36 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- Dock width mostly matches button content * DockScale
+    -- Hard-coded dock placement: fixed bottom line + centered apps
     local function updateTabHolderSize()
         local contentWidth = tabList.AbsoluteContentSize.X
         local dockScale = thisWindow.DockScale or 1
-        local outerPadding = 12
-        local minWidth = 90
-        local baseHeight = 56
 
-        local targetWidth = math.max(contentWidth + outerPadding * 2, minWidth)
-        targetWidth = targetWidth * dockScale
+        local barY = -20                 -- pixels above bottom of screen
+        local barHeight = 56 * dockScale
 
-        tabBar.Size = UDim2.new(0, targetWidth, 0, baseHeight * dockScale)
+        local appPadding = 12
+        local minWidth   = 90
+        local barWidth   = math.max(contentWidth + appPadding * 2, minWidth) * dockScale
 
-        tabHolder.Size = UDim2.new(1, -outerPadding, 1, -math.max(4, outerPadding / 2))
-        tabHolder.Position = UDim2.new(0, outerPadding / 2, 0, math.max(2, outerPadding / 4))
+        tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
 
-        local align = thisWindow.TabBarAlignment
+        local align  = thisWindow.TabBarAlignment
         local offset = thisWindow.TabBarOffset
 
         if align == "Left" then
             tabBar.AnchorPoint = Vector2.new(0, 1)
-            tabBar.Position = UDim2.new(0, 10 + offset, 1, -4)
+            tabBar.Position    = UDim2.new(0, 10 + offset, 1, barY)
         elseif align == "Right" then
             tabBar.AnchorPoint = Vector2.new(1, 1)
-            tabBar.Position = UDim2.new(1, -10 + offset, 1, -4)
+            tabBar.Position    = UDim2.new(1, -10 + offset, 1, barY)
         else
             tabBar.AnchorPoint = Vector2.new(0.5, 1)
-            tabBar.Position = UDim2.new(0.5, offset, 1, -4)
+            tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
         end
+
+        tabHolder.Size     = UDim2.new(1, -appPadding, 1, -8)
+        tabHolder.Position = UDim2.new(0, appPadding / 2, 0, 4)
 
         thisWindow.HomeTabBarPos = tabBar.Position
     end
@@ -345,7 +350,20 @@ function Library:CreateWindow(options)
     thisWindow.HomeTabBarPos    = tabBar.Position
 
     ------------------------------------------------------------------
-    -- Animations using home positions
+    -- Helpers for icon animation
+    ------------------------------------------------------------------
+    local function getTabButtons(tabHolder)
+        local buttons = {}
+        for _, child in ipairs(tabHolder:GetChildren()) do
+            if child:IsA("TextButton") then
+                table.insert(buttons, child)
+            end
+        end
+        return buttons
+    end
+
+    ------------------------------------------------------------------
+    -- Animations: card, bar background, then icons
     ------------------------------------------------------------------
     local function playOpenAnimation(win)
         win.MainGui.Enabled = true
@@ -358,40 +376,43 @@ function Library:CreateWindow(options)
             win:UpdateTabDock()
         end
 
-        local targetPos = win.HomeContainerPos or win.Container.Position
-        local barTarget = win.HomeTabBarPos or win.TabBar.Position
+        local targetCard = win.HomeContainerPos or win.Container.Position
+        local targetBar  = win.HomeTabBarPos or win.TabBar.Position
 
         if not win.AnimateOnOpen then
-            win.Container.Position = targetPos
-            win.TabBar.Position    = barTarget
+            win.Container.Position = targetCard
+            win.TabBar.Position    = targetBar
             win.Blur.Size = 18
-            win.HomeContainerPos = win.Container.Position
-            win.HomeTabBarPos    = win.TabBar.Position
             return
         end
 
         win.Blur.Size = 0
 
-        local mainInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local fromMain = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
-        win.Container.Position = fromMain
-        TweenService:Create(win.Container, mainInfo, { Position = targetPos }):Play()
+        -- Stage 1: card + bar background
+        local cardInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local barInfo  = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-        local barInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local barFrom = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
-        win.TabBar.Position = barFrom
-        TweenService:Create(win.TabBar, barInfo, { Position = barTarget }):Play()
+        local fromCard = UDim2.new(1.2, 0, targetCard.Y.Scale, targetCard.Y.Offset)
+        win.Container.Position = fromCard
+        TweenService:Create(win.Container, cardInfo, { Position = targetCard }):Play()
+
+        local fromBar = UDim2.new(targetBar.X.Scale, targetBar.X.Offset, 1, 60)
+        win.TabBar.Position = fromBar
+        TweenService:Create(win.TabBar, barInfo, { Position = targetBar }):Play()
 
         TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
 
-        task.delay(0.22, function()
-            if win.Container then
-                win.HomeContainerPos = win.Container.Position
-            end
-            if win.TabBar then
-                win.HomeTabBarPos = win.TabBar.Position
-            end
-        end)
+        -- Stage 2: icons slide up onto the bar
+        local buttons = getTabButtons(win.TabBar)
+        local iconTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        for _, btn in ipairs(buttons) do
+            local target = btn.Position
+            btn.Position = UDim2.new(target.X.Scale, target.X.Offset, 1.5, target.Y.Offset)
+            TweenService:Create(btn, iconTweenInfo, {
+                Position = UDim2.new(target.X.Scale, target.X.Offset, 0.5, target.Y.Offset)
+            }):Play()
+        end
     end
 
     local function playCloseAnimation(win)
@@ -406,11 +427,21 @@ function Library:CreateWindow(options)
 
         local tweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
+        -- card to right
         local endPosContainer = UDim2.new(1.2, 0, win.Container.Position.Y.Scale, win.Container.Position.Y.Offset)
         TweenService:Create(win.Container, tweenInfo, { Position = endPosContainer }):Play()
 
+        -- bar background + icons down
         local endPosTab = UDim2.new(win.TabBar.Position.X.Scale, win.TabBar.Position.X.Offset, 1, 60)
         TweenService:Create(win.TabBar, tweenInfo, { Position = endPosTab }):Play()
+
+        local buttons = getTabButtons(win.TabBar)
+        for _, btn in ipairs(buttons) do
+            local pos = btn.Position
+            TweenService:Create(btn, tweenInfo, {
+                Position = UDim2.new(pos.X.Scale, pos.X.Offset, 1.5, pos.Y.Offset)
+            }):Play()
+        end
 
         TweenService:Create(win.Blur, tweenInfo, { Size = 0 }):Play()
 
