@@ -372,60 +372,60 @@ function Library:CreateWindow(options)
     ------------------------------------------------------------------
     -- Animations: card, bar background, then icons
     ------------------------------------------------------------------
-    local function playOpenAnimation(win)
-        win.MainGui.Enabled = true
-        win.BarGui.Enabled = true
-        if win.ClockGui then win.ClockGui.Enabled = true end
+local function playOpenAnimation(win)
+    win.MainGui.Enabled = true
+    win.BarGui.Enabled = true
+    if win.ClockGui then win.ClockGui.Enabled = true end
 
-        win.Blur.Enabled = true
+    win.Blur.Enabled = true
 
+    if win.UpdateTabDock then
+        win:UpdateTabDock()
+    end
+
+    local targetCard = win.HomeContainerPos or win.Container.Position
+    local targetBar  = win.HomeTabBarPos or win.TabBar.Position
+
+    if not win.AnimateOnOpen then
+        win.Container.Position = targetCard
+        win.TabBar.Position    = targetBar
+        win.Blur.Size = 18
+        return
+    end
+
+    win.Blur.Size = 0
+
+    -- Stage 1: card + bar background
+    local cardInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local barInfo  = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    local fromCard = UDim2.new(1.2, 0, targetCard.Y.Scale, targetCard.Y.Offset)
+    win.Container.Position = fromCard
+    TweenService:Create(win.Container, cardInfo, { Position = targetCard }):Play()
+
+    local fromBar = UDim2.new(targetBar.X.Scale, targetBar.X.Offset, 1, 60)
+    win.TabBar.Position = fromBar
+    TweenService:Create(win.TabBar, barInfo, { Position = targetBar }):Play()
+
+    TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
+
+    -- Stage 2: icons slide up onto the bar
+    local buttons = getTabButtons(win.TabBar)
+    local iconTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    for _, btn in ipairs(buttons) do
+        local target = btn.Position
+        btn.Position = UDim2.new(target.X.Scale, target.X.Offset, target.Y.Scale + 1, target.Y.Offset)
+        TweenService:Create(btn, iconTweenInfo, { Position = target }):Play()
+    end
+
+    -- After all tweens should be done, force a final dock layout update
+    task.delay(0.25, function()
         if win.UpdateTabDock then
             win:UpdateTabDock()
         end
-
-        local targetCard = win.HomeContainerPos or win.Container.Position
-        local targetBar  = win.HomeTabBarPos or win.TabBar.Position
-
-        if not win.AnimateOnOpen then
-            win.Container.Position = targetCard
-            win.TabBar.Position    = targetBar
-            win.Blur.Size = 18
-            return
-        end
-
-        win.Blur.Size = 0
-
-        -- Stage 1: card + bar background
-        local cardInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local barInfo  = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        local fromCard = UDim2.new(1.2, 0, targetCard.Y.Scale, targetCard.Y.Offset)
-        win.Container.Position = fromCard
-        TweenService:Create(win.Container, cardInfo, { Position = targetCard }):Play()
-
-        local fromBar = UDim2.new(targetBar.X.Scale, targetBar.X.Offset, 1, 60)
-        win.TabBar.Position = fromBar
-        TweenService:Create(win.TabBar, barInfo, { Position = targetBar }):Play()
-
-        TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
-
-        -- Stage 2: icons slide up onto the bar
-        local buttons = getTabButtons(win.TabBar)
-        local iconTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        for _, btn in ipairs(buttons) do
-            -- true layout target
-            local target = btn.Position
-
-            -- start below the bar (same X and Y offset, only scale changed)
-            btn.Position = UDim2.new(target.X.Scale, target.X.Offset, target.Y.Scale + 1, target.Y.Offset)
-
-            -- tween back to the exact layout position
-            TweenService:Create(btn, iconTweenInfo, {
-                Position = target
-            }):Play()
-        end
-    end
+    end)
+end
 
     local function playCloseAnimation(win)
         if not win.AnimateOnOpen then
