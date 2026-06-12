@@ -259,8 +259,9 @@ function Library:CreateWindow(options)
     contentCorner.Parent = contentArea
 
     ------------------------------------------------------------------
+    -- Dock
+    ------------------------------------------------------------------
 -- Dock
--------------------------
 local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
 tabBar.BackgroundColor3 = selfLib.Theme.Background
@@ -315,10 +316,8 @@ local function updateTabHolderSize()
     local contentWidth = tabList.AbsoluteContentSize.X
     local dockScale    = thisWindow.DockScale or 1
 
-    local barY      = -20
-    local buttonH   = 40 * dockScale
-    local barHeight = (buttonH + 8)        -- 4px top + 4px bottom
-
+    local barY      = -20               -- distance from bottom of screen
+    local barHeight = 56 * dockScale
     local sidePad   = 16
     local minWidth  = 90
 
@@ -340,6 +339,7 @@ local function updateTabHolderSize()
         tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
     end
 
+    -- Holder stays full bar; center alignment now matches bar visually
     tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
     tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
     tabHolder.Size        = UDim2.new(1, 0, 1, 0)
