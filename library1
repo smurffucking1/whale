@@ -309,42 +309,79 @@ function Library:CreateWindow(options)
     end
 
     -- Hard-coded dock placement: fixed bottom line + centered apps
-    local function updateTabHolderSize()
-        local contentWidth = tabList.AbsoluteContentSize.X
-        local dockScale = thisWindow.DockScale or 1
+-- Dock
+local tabBar = Instance.new("Frame")
+tabBar.Name = "TabBar"
+tabBar.BackgroundColor3 = selfLib.Theme.Background
+tabBar.BorderSizePixel = 0
+tabBar.Size = UDim2.new(0, 420, 0, 56)
+tabBar.AnchorPoint = Vector2.new(0.5, 1)
+tabBar.Position = UDim2.new(0.5, 0, 1, -20)
+tabBar.Parent = barGui
 
-        local barY = -20                 -- pixels above bottom of screen
-        local barHeight = 56 * dockScale
+local tabBarCorner = Instance.new("UICorner")
+tabBarCorner.Parent = tabBar
 
-        local appPadding = 12
-        local minWidth   = 90
-        local barWidth   = math.max(contentWidth + appPadding * 2, minWidth) * dockScale
+local tabHolder = Instance.new("Frame")
+tabHolder.Name = "TabHolder"
+tabHolder.BackgroundTransparency = 1
+tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+tabHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
+tabHolder.Size = UDim2.new(1, 0, 1, 0)
+tabHolder.Parent = tabBar
+thisWindow.TabBar = tabHolder
 
-        tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
+local tabList = Instance.new("UIListLayout")
+tabList.FillDirection = Enum.FillDirection.Horizontal
+tabList.SortOrder = Enum.SortOrder.LayoutOrder
+tabList.Padding = UDim.new(0, 6)
+tabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+tabList.VerticalAlignment = Enum.HorizontalAlignment.Center
+tabList.Parent = tabHolder
 
-        local align  = thisWindow.TabBarAlignment
-        local offset = thisWindow.TabBarOffset
+applyCornerRadius(corner, thisWindow)
+applyCornerRadius(contentCorner, thisWindow)
+applyCornerRadius(tabBarCorner, thisWindow, 1)
 
-        if align == "Left" then
-            tabBar.AnchorPoint = Vector2.new(0, 1)
-            tabBar.Position    = UDim2.new(0, 10 + offset, 1, barY)
-        elseif align == "Right" then
-            tabBar.AnchorPoint = Vector2.new(1, 1)
-            tabBar.Position    = UDim2.new(1, -10 + offset, 1, barY)
-        else
-            tabBar.AnchorPoint = Vector2.new(0.5, 1)
-            tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
-        end
+-- Hard-coded dock placement: fixed bottom line + centered apps
+local function updateTabHolderSize()
+    local contentWidth = tabList.AbsoluteContentSize.X
+    local dockScale = thisWindow.DockScale or 1
 
-        tabHolder.Size     = UDim2.new(1, -appPadding, 1, -8)
-        tabHolder.Position = UDim2.new(0, appPadding / 2, 0, 4)
+    local barY = -20
+    local barHeight = 56 * dockScale
 
-        thisWindow.HomeTabBarPos = tabBar.Position
+    local sidePadding = 16
+    local minWidth   = 90
+    local barWidth   = math.max(contentWidth + sidePadding * 2, minWidth) * dockScale
+
+    tabBar.Size = UDim2.new(0, barWidth, 0, barHeight)
+
+    local align  = thisWindow.TabBarAlignment
+    local offset = thisWindow.TabBarOffset
+
+    if align == "Left" then
+        tabBar.AnchorPoint = Vector2.new(0, 1)
+        tabBar.Position    = UDim2.new(0, 10 + offset, 1, barY)
+    elseif align == "Right" then
+        tabBar.AnchorPoint = Vector2.new(1, 1)
+        tabBar.Position    = UDim2.new(1, -10 + offset, 1, barY)
+    else
+        tabBar.AnchorPoint = Vector2.new(0.5, 1)
+        tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
     end
 
-    thisWindow.UpdateTabDock = updateTabHolderSize
-    tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
-    updateTabHolderSize()
+    -- holder stays full-size, centered; icons are centered by UIListLayout
+    tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+    tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
+    tabHolder.Size        = UDim2.new(1, 0, 1, 0)
+
+    thisWindow.HomeTabBarPos = tabBar.Position
+end
+
+thisWindow.UpdateTabDock = updateTabHolderSize
+tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
+updateTabHolderSize()
 
     thisWindow.HomeContainerPos = thisWindow.Container.Position
     thisWindow.HomeTabBarPos    = tabBar.Position
