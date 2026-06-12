@@ -1,0 +1,146 @@
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/smurffucking1/whale/refs/heads/main/library1"))()
+
+local Window = Library:CreateWindow({
+    Title        = "My New UI",
+    SubTitle     = "v1.0",
+    DefaultTheme = "Dark",
+    DestroyKey   = Enum.KeyCode.RightShift,
+})
+
+local MainTab     = Window:AddTab("Main")
+local MiscTab     = Window:AddTab("Misc")
+local SettingsTab = Window:AddTab("Settings")
+
+-- load config AFTER window exists
+local CONFIG_NAME = "my_new_ui"
+local config = Window:LoadConfig(CONFIG_NAME) or {
+    Godmode    = false,
+    WalkSpeed  = 16,
+    Width      = Window.Width,
+    Height     = Window.Height,
+    DockScale  = 1,
+    AnchorX    = Window.AnchorOffsetX or 35,
+    ClockScale = 1, -- NEW: default clock scale
+}
+
+-- clamp any crazy saved values so the UI stays on-screen
+config.Width      = math.clamp(config.Width or Window.Width, 300, 900)
+config.Height     = math.clamp(config.Height or Window.Height, 220, 700)
+config.DockScale  = math.clamp(config.DockScale or 1, 0.6, 1.8)
+config.AnchorX    = math.clamp(config.AnchorX or 35, 0, 300)
+config.ClockScale = math.clamp(config.ClockScale or 1, 0.5, 2) -- NEW: clamp clock scale
+
+local function autosave()
+    Window:SaveConfig(CONFIG_NAME, config)
+end
+
+-- apply size/position from config ONCE here
+Window:SetAnchorMode("Left")
+Window:SetWidth(config.Width)
+Window:SetHeight(config.Height)
+Window:SetAnchorOffsetX(config.AnchorX)
+Window:SetDockScale(config.DockScale)
+Window:SetClockScale(config.ClockScale) -- NEW: apply clock scale on startup
+
+-- MAIN TAB (no toggles here)
+MainTab:AddButton("Do something", function()
+    print("Clicked")
+end)
+
+MainTab:AddSlider("WalkSpeed", 16, 100, config.WalkSpeed, function(v)
+    config.WalkSpeed = v
+    print("Slider value:", v)
+    autosave()
+end)
+
+-- MISC TAB (all toggles here, pill style)
+MiscTab:AddToggle("Godmode", config.Godmode, function(value)
+    config.Godmode = value
+    print("Godmode:", value)
+    autosave()
+end)
+
+-- SETTINGS TAB
+
+-- keybind to toggle UI
+SettingsTab:AddKeybind("Toggle UI", Window.DestroyKey, function(newKey)
+    Window:SetToggleKey(newKey)
+end)
+
+SettingsTab:AddButton("Destroy UI", function()
+    Window:Destroy()
+end)
+
+-- theme dropdown
+local themesDropdown = SettingsTab:AddDropdown("Theme", Library:GetThemes(), "Dark", function(themeName)
+    Library:SetTheme(themeName)
+    autosave()
+end)
+
+-- taskbar alignment + offset
+SettingsTab:AddDropdown("Taskbar Align", {"Left","Center","Right"}, "Center", function(v)
+    Window:SetTabBarAlignment(v)
+    autosave()
+end)
+
+SettingsTab:AddSlider("Taskbar Offset", -200, 200, 0, function(v)
+    Window:SetTabBarOffset(v)
+    autosave()
+end)
+
+-- padding
+SettingsTab:AddSlider("GUI Padding Slider", 0, 40, Window.Padding or 10, function(v)
+    Window:SetPadding(v)
+    autosave()
+end)
+
+-- rounding
+SettingsTab:AddSlider("GUI Corner Radius", 0, 30, Window.CornerRadius or 18, function(v)
+    Window:SetCornerRadius(v)
+    autosave()
+end)
+
+-- bottom bar size
+SettingsTab:AddSlider("Taskbar Size", 60, 180, (config.DockScale or 1) * 100, function(v)
+    local scale = v / 100
+    config.DockScale = scale
+    Window:SetDockScale(scale)
+    autosave()
+end)
+
+-- opening animations
+SettingsTab:AddToggle("Animations", true, function(on)
+    Window:SetAnimations(on)
+    autosave()
+end)
+
+-- GUI width/height sliders
+SettingsTab:AddSlider("GUI Width", 300, 900, config.Width, function(v)
+    config.Width = v
+    Window:SetWidth(v)
+    autosave()
+end)
+
+SettingsTab:AddSlider("GUI Height", 220, 700, config.Height, function(v)
+    config.Height = v
+    Window:SetHeight(v)
+    autosave()
+end)
+
+-- GUI X offset (distance from left edge)
+SettingsTab:AddSlider("GUI X Offset", 0, 300, config.AnchorX, function(v)
+    config.AnchorX = v
+    Window:SetAnchorOffsetX(v)
+    autosave()
+end)
+
+-- NEW: Clock scale slider (0.5x – 2.0x)
+SettingsTab:AddSlider("Clock Scale", 50, 200, config.ClockScale * 100, function(v)
+    local scale = v / 100
+    config.ClockScale = scale
+    Window:SetClockScale(scale)
+    autosave()
+end)
