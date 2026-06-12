@@ -1,7 +1,7 @@
 -- tab3 - full updated library:
 -- - no title bar (just rounded card)
 -- - fixed size with SetWidth/SetHeight/SetSize
--- - anchor middle-left with adjustable X/Y offset
+-- - anchor left/center with adjustable X/Y offset
 -- - dock scaling, alignment, offset
 -- - pill toggles (text inside, color change)
 -- - simple getgenv()-based config API
@@ -16,7 +16,7 @@ local Lighting = game:GetService("Lighting")
 local Library = {}
 Library.__index = Library
 
--- Themes
+-- THEMES
 Library.Themes = {
     Dark = {
         Background  = Color3.fromRGB(20, 20, 25),
@@ -91,7 +91,7 @@ local function getConfigStore()
     return getgenv()._tab5_configs
 end
 
--- MAIN
+-- MAIN ENTRY
 function Library:CreateWindow(options)
     options = options or {}
 
@@ -163,7 +163,9 @@ function Library:CreateWindow(options)
         ClockScale       = 1,
     }, Window)
 
-    -- Clock GUI (top-right)
+    --------------------------------------------------------------------
+    -- CLOCK GUI (top-right)
+    --------------------------------------------------------------------
     local clockGui = Instance.new("ScreenGui")
     clockGui.Name = (options.Title or "MyUI") .. "_Clock"
     clockGui.IgnoreGuiInset = true
@@ -200,7 +202,7 @@ function Library:CreateWindow(options)
     thisWindow.ClockGui = clockGui
     thisWindow.ClockBar = clockBar
 
-    -- apply initial clock scale
+    -- initial clock scale
     do
         local uiScale = Instance.new("UIScale")
         uiScale.Scale = thisWindow.ClockScale
@@ -215,7 +217,9 @@ function Library:CreateWindow(options)
         end
     end)
 
-    -- Container
+    --------------------------------------------------------------------
+    -- MAIN CONTAINER / CARD
+    --------------------------------------------------------------------
     local container = Instance.new("Frame")
     container.Name = "MainContainer"
     container.BackgroundTransparency = 1
@@ -282,7 +286,9 @@ function Library:CreateWindow(options)
     local contentCorner = Instance.new("UICorner")
     contentCorner.Parent = contentArea
 
-    -- Dock
+    --------------------------------------------------------------------
+    -- DOCK / TAB BAR
+    --------------------------------------------------------------------
     local tabBar = Instance.new("Frame")
     tabBar.Name = "TabBar"
     tabBar.BackgroundColor3 = selfLib.Theme.Background
@@ -362,40 +368,39 @@ function Library:CreateWindow(options)
     tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
     updateTabHolderSize()
 
+    --------------------------------------------------------------------
     -- OPEN/CLOSE ANIMATION HELPERS
+    --------------------------------------------------------------------
     local function playOpenAnimation(win)
-        if not win.AnimateOnOpen then
-            win.MainGui.Enabled = true
-            win.BarGui.Enabled = true
-            if win.ClockGui then
-                win.ClockGui.Enabled = true
-            end
-            win.Blur.Enabled = true
-            win.Blur.Size = 18
-            return
-        end
-
+        -- Always re-enable GUIs before animating
         win.MainGui.Enabled = true
         win.BarGui.Enabled = true
         if win.ClockGui then
             win.ClockGui.Enabled = true
         end
+
         win.Blur.Enabled = true
+
+        if not win.AnimateOnOpen then
+            win.Blur.Size = 18
+            return
+        end
+
         win.Blur.Size = 0
 
-        -- container slide-in
+        -- container slide-in from right
         local tweenInfoMain = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local curPos = win.Container.Position
-        local fromPos = UDim2.new(1.2, 0, curPos.Y.Scale, curPos.Y.Offset)
+        local targetPos = win.Container.Position
+        local fromPos = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
         win.Container.Position = fromPos
-        TweenService:Create(win.Container, tweenInfoMain, { Position = curPos }):Play()
+        TweenService:Create(win.Container, tweenInfoMain, { Position = targetPos }):Play()
 
-        -- dock slide-up
+        -- dock slide-up from bottom
         local tweenInfoBar = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local endPos = win.TabBar.Position
-        local startPos = UDim2.new(endPos.X.Scale, endPos.X.Offset, 1, 60)
-        win.TabBar.Position = startPos
-        TweenService:Create(win.TabBar, tweenInfoBar, { Position = endPos }):Play()
+        local barTarget = win.TabBar.Position
+        local barFrom   = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
+        win.TabBar.Position = barFrom
+        TweenService:Create(win.TabBar, tweenInfoBar, { Position = barTarget }):Play()
 
         -- blur fade-in
         TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
@@ -415,25 +420,32 @@ function Library:CreateWindow(options)
 
         local tweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
+        -- slide container off-screen to the right
         local endPosContainer = UDim2.new(1.2, 0, win.Container.Position.Y.Scale, win.Container.Position.Y.Offset)
         TweenService:Create(win.Container, tweenInfo, { Position = endPosContainer }):Play()
 
+        -- slide dock down
         local endPosTab = UDim2.new(win.TabBar.Position.X.Scale, win.TabBar.Position.X.Offset, 1, 60)
         TweenService:Create(win.TabBar, tweenInfo, { Position = endPosTab }):Play()
 
+        -- blur fade-out
         TweenService:Create(win.Blur, tweenInfo, { Size = 0 }):Play()
 
-        task.delay(0.16, function()
+        -- Only disable after tween ends so reopening works
+        task.delay(tweenInfo.Time, function()
             win.MainGui.Enabled = false
             win.BarGui.Enabled = false
             if win.ClockGui then
                 win.ClockGui.Enabled = false
             end
             win.Blur.Enabled = false
+            win.Blur.Size = 0
         end)
     end
 
-    -- toggle key with animations
+    --------------------------------------------------------------------
+    -- TOGGLE KEY (open/close)
+    --------------------------------------------------------------------
     table.insert(thisWindow.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
         if input.KeyCode == thisWindow.DestroyKey then
@@ -455,7 +467,9 @@ function Library:CreateWindow(options)
     return thisWindow
 end
 
--- Window methods (on prototype)
+----------------------------------------------------------------------
+-- WINDOW METHODS (prototype)
+----------------------------------------------------------------------
 
 function Window:SetToggleKey(keyCode)
     self.DestroyKey = keyCode
@@ -708,7 +722,9 @@ function Window:AddTab(name)
     return tabObj
 end
 
--- Tab methods
+----------------------------------------------------------------------
+-- TAB METHODS
+----------------------------------------------------------------------
 
 function Tab:AddLabel(text)
     local theme = self.Window.Library.Theme
