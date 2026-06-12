@@ -313,12 +313,16 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- Dock sizing and alignment (bar stays 56px tall; we offset buttons instead)
--- Dock sizing and alignment with truly equal edge padding
+-- Dock sizing and alignment with precise left/right padding
 local function updateTabHolderSize()
     local dockScale = thisWindow.DockScale or 1
 
-    -- Get all buttons
+    -- Holder must fill the bar and be centered
+    tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+    tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
+    tabHolder.Size        = UDim2.new(1, 0, 1, 0)
+
+    -- Collect all app buttons
     local buttons = {}
     for _, child in ipairs(tabHolder:GetChildren()) do
         if child:IsA("TextButton") then
@@ -326,26 +330,34 @@ local function updateTabHolderSize()
         end
     end
 
-    -- If no buttons yet, just keep current size/position
+    -- No buttons yet: choose a small default width
     if #buttons == 0 then
+        local defaultWidth  = 120 * dockScale
+        local defaultHeight = 56 * dockScale
+        local barY          = -20
+
+        tabBar.Size = UDim2.new(0, defaultWidth, 0, defaultHeight)
+        tabBar.AnchorPoint = Vector2.new(0.5, 1)
+        tabBar.Position    = UDim2.new(0.5, thisWindow.TabBarOffset or 0, 1, barY)
+
+        thisWindow.HomeTabBarPos = tabBar.Position
         return
     end
 
-    -- Force layout update
+    -- Force layout to update before we measure
     tabList:ApplyLayout()
 
-    -- Find leftmost and rightmost button positions in holder space
-    local holderAbsPos  = tabHolder.AbsolutePosition.X
-    local holderAbsSize = tabHolder.AbsoluteSize.X
+    local holderAbsX = tabHolder.AbsolutePosition.X
 
     local leftEdge  = math.huge
     local rightEdge = -math.huge
 
     for _, btn in ipairs(buttons) do
-        local absX  = btn.AbsolutePosition.X
-        local width = btn.AbsoluteSize.X
-        local btnLeft  = absX - holderAbsPos
-        local btnRight = btnLeft + width
+        local btnAbsX = btn.AbsolutePosition.X
+        local btnW    = btn.AbsoluteSize.X
+
+        local btnLeft  = btnAbsX - holderAbsX
+        local btnRight = btnLeft + btnW
 
         if btnLeft < leftEdge then
             leftEdge = btnLeft
@@ -357,12 +369,12 @@ local function updateTabHolderSize()
 
     local appsWidth = math.max(rightEdge - leftEdge, 0)
 
-    -- Desired padding from outermost app to bar edge (in pixels)
-    local sidePadding = 16
+    -- Desired gap from outermost app to bar edge
+    local sidePadding = 12  -- tweak this to taste
 
-    -- Bar width = apps width + padding on both sides
-    local barWidthPixels = appsWidth + sidePadding * 2
-    local barWidth       = barWidthPixels * dockScale
+    -- Bar width in pixels before applying DockScale
+    local baseWidthPixels = appsWidth + sidePadding * 2
+    local barWidth        = baseWidthPixels * dockScale
 
     -- Keep your existing bar height and Y offset
     local barHeight = 56 * dockScale
@@ -372,7 +384,7 @@ local function updateTabHolderSize()
 
     -- Align the bar (left/center/right)
     local align  = thisWindow.TabBarAlignment
-    local offset = thisWindow.TabBarOffset
+    local offset = thisWindow.TabBarOffset or 0
 
     if align == "Left" then
         tabBar.AnchorPoint = Vector2.new(0, 1)
@@ -384,11 +396,6 @@ local function updateTabHolderSize()
         tabBar.AnchorPoint = Vector2.new(0.5, 1)
         tabBar.Position    = UDim2.new(0.5, offset, 1, barY)
     end
-
-    -- Holder fills the bar and is centered
-    tabHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-    tabHolder.Position    = UDim2.new(0.5, 0, 0.5, 0)
-    tabHolder.Size        = UDim2.new(1, 0, 1, 0)
 
     thisWindow.HomeTabBarPos = tabBar.Position
 end
