@@ -1,0 +1,1278 @@
+-- Stable UI library with:
+-- - Rounded main card, no title bar
+-- - Bottom dock with tabs
+-- - Top-right clock + SetClockScale
+-- - Toggle key with IsOpen flag
+-- - Saved home positions for animations (no off-screen lock)
+-- - Size/anchor/dock controls and basic elements
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local Library = {}
+Library.__index = Library
+
+Library.Themes = {
+    Dark = {
+        Background  = Color3.fromRGB(20, 20, 25),
+        Accent      = Color3.fromRGB(65, 130, 255),
+        Accent2     = Color3.fromRGB(60, 60, 80),
+        Text        = Color3.fromRGB(240, 240, 255),
+        SubText     = Color3.fromRGB(170, 170, 190),
+        TabInactive = Color3.fromRGB(35, 35, 45),
+        TabActive   = Color3.fromRGB(65, 130, 255),
+    },
+}
+
+function Library:GetThemes()
+    local names = {}
+    for name in pairs(self.Themes) do
+        table.insert(names, name)
+    end
+    table.sort(names)
+    return names
+end
+
+function Library:SetTheme(name)
+    if not self.Themes[name] then return end
+    self.Theme = self.Themes[name]
+    self.Theme.Name = name
+    Library.Theme = self.Theme
+end
+
+local Window = {}
+Window.__index = Window
+
+local Tab = {}
+Tab.__index = Tab
+
+local function getOrCreateBlur()
+    local blur = Lighting:FindFirstChildOfClass("BlurEffect")
+    if not blur then
+        blur = Instance.new("BlurEffect")
+        blur.Size = 0
+        blur.Enabled = false
+        blur.Parent = Lighting
+    end
+    return blur
+end
+
+local function applyCornerRadius(uiCorner, window, scale)
+    scale = scale or 1
+    local r = window.CornerRadius or 10
+    uiCorner.CornerRadius = UDim.new(0, math.floor(r * scale))
+end
+
+local function getConfigStore()
+    getgenv()._tab5_configs = getgenv()._tab5_configs or {}
+    return getgenv()._tab5_configs
+end
+
+----------------------------------------------------------------------
+-- CreateWindow
+----------------------------------------------------------------------
+
+function Library:CreateWindow(options)
+    options = options or {}
+
+    local selfLib = setmetatable({}, Library)
+    selfLib:SetTheme(options.DefaultTheme or "Dark")
+
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    local blur = getOrCreateBlur()
+
+    local mainGui = Instance.new("ScreenGui")
+    mainGui.Name = (options.Title or "MyUI") .. "_Main"
+    mainGui.IgnoreGuiInset = true
+    mainGui.ResetOnSpawn = false
+    mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    mainGui.DisplayOrder = 9999
+    mainGui.Parent = playerGui
+
+    local blocker = Instance.new("TextButton")
+    blocker.Name = "InputBlocker"
+    blocker.BackgroundTransparency = 1
+    blocker.BorderSizePixel = 0
+    blocker.Size = UDim2.new(1, 0, 1, 0)
+    blocker.Text = ""
+    blocker.AutoButtonColor = false
+    blocker.Modal = true
+    blocker.Parent = mainGui
+
+    local barGui = Instance.new("ScreenGui")
+    barGui.Name = (options.Title or "MyUI") .. "_Bar"
+    barGui.IgnoreGuiInset = true
+    barGui.ResetOnSpawn = false
+    barGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    barGui.DisplayOrder = 9999
+    barGui.Parent = playerGui
+
+    local thisWindow = setmetatable({
+        Library          = selfLib,
+        MainGui          = mainGui,
+        BarGui           = barGui,
+        ClockGui         = nil,
+        ClockBar         = nil,
+        Root             = nil,
+        Container        = nil,
+        TabBar           = nil,
+        ContentArea      = nil,
+        Tabs             = {},
+        ActiveTab        = nil,
+        Connections      = {},
+        DestroyKey       = options.DestroyKey or Enum.KeyCode.RightShift,
+        Blur             = blur,
+        TabBarAlignment  = "Center",
+        TabBarOffset     = 0,
+        Padding          = 10,
+        CornerRadius     = 18,
+        DockScale        = 1,
+        AnimateOnOpen    = true,
+        Width            = 500,
+        Height           = 360,
+        AnchorMode       = "Left",
+        AnchorOffsetX    = 35,
+        AnchorOffsetY    = 0,
+        ClockScale       = 1,
+        IsOpen           = true,
+        HomeContainerPos = nil,
+        HomeTabBarPos    = nil,
+    }, Window)
+
+    ------------------------------------------------------------------
+    -- Clock GUI
+    ------------------------------------------------------------------
+    local clockGui = Instance.new("ScreenGui")
+    clockGui.Name = (options.Title or "MyUI") .. "_Clock"
+    clockGui.IgnoreGuiInset = true
+    clockGui.ResetOnSpawn = false
+    clockGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    clockGui.DisplayOrder = 10000
+    clockGui.Parent = playerGui
+
+    local clockBar = Instance.new("Frame")
+    clockBar.Name = "ClockBar"
+    clockBar.Parent = clockGui
+    clockBar.AnchorPoint = Vector2.new(1, 0)
+    clockBar.Position = UDim2.new(1, -16, 0, 12)
+    clockBar.Size = UDim2.new(0, 90, 0, 26)
+    clockBar.BackgroundColor3 = selfLib.Theme.Background
+    clockBar.BorderSizePixel = 0
+
+    local clockCorner = Instance.new("UICorner")
+    applyCornerRadius(clockCorner, thisWindow, 0.8)
+    clockCorner.Parent = clockBar
+
+    local clockLabel = Instance.new("TextLabel")
+    clockLabel.Name = "ClockLabel"
+    clockLabel.Parent = clockBar
+    clockLabel.BackgroundTransparency = 1
+    clockLabel.Size = UDim2.new(1, -12, 1, 0)
+    clockLabel.Position = UDim2.new(0, 6, 0, 0)
+    clockLabel.Font = Enum.Font.Gotham
+    clockLabel.TextSize = 14
+    clockLabel.TextColor3 = selfLib.Theme.Text
+    clockLabel.TextXAlignment = Enum.TextXAlignment.Center
+    clockLabel.Text = "00:00"
+
+    thisWindow.ClockGui = clockGui
+    thisWindow.ClockBar = clockBar
+
+    local uiScale = Instance.new("UIScale")
+    uiScale.Scale = thisWindow.ClockScale
+    uiScale.Parent = clockBar
+
+    task.spawn(function()
+        while clockGui.Parent do
+            local now = os.date("*t")
+            clockLabel.Text = string.format("%02d:%02d", now.hour, now.min)
+            task.wait(1)
+        end
+    end)
+
+    ------------------------------------------------------------------
+    -- Container + card
+    ------------------------------------------------------------------
+    local container = Instance.new("Frame")
+    container.Name = "MainContainer"
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    container.AnchorPoint = Vector2.new(0, 0)
+    container.Parent = mainGui
+    thisWindow.Container = container
+
+    function thisWindow:SetSize(width, height)
+        self.Width  = math.max(300, tonumber(width) or self.Width)
+        self.Height = math.max(220, tonumber(height) or self.Height)
+        self.AnchorOffsetY = self.AnchorOffsetY or 0
+
+        if self.Container then
+            self.Container.Size = UDim2.new(0, self.Width, 0, self.Height)
+            if self.AnchorMode == "Left" then
+                self.Container.Position = UDim2.new(
+                    0, self.AnchorOffsetX,
+                    0.5, -self.Height / 2 + self.AnchorOffsetY
+                )
+            else
+                self.Container.Position = UDim2.new(
+                    0.5, -self.Width / 2,
+                    0.5, -self.Height / 2 + self.AnchorOffsetY
+                )
+            end
+        end
+
+        -- Update home position when size/anchor changes
+        self.HomeContainerPos = self.Container.Position
+    end
+
+    function thisWindow:SetWidth(w)
+        self:SetSize(w, self.Height)
+    end
+
+    function thisWindow:SetHeight(h)
+        self:SetSize(self.Width, h)
+    end
+
+    thisWindow:SetSize(thisWindow.Width, thisWindow.Height)
+
+    local rootFrame = Instance.new("Frame")
+    rootFrame.Name = "MainFrame"
+    rootFrame.Size = UDim2.new(1, 0, 1, 0)
+    rootFrame.BackgroundColor3 = selfLib.Theme.Background
+    rootFrame.BorderSizePixel = 0
+    rootFrame.Parent = container
+    thisWindow.Root = rootFrame
+
+    local corner = Instance.new("UICorner")
+    corner.Parent = rootFrame
+
+    local contentArea = Instance.new("Frame")
+    contentArea.Name = "Content"
+    contentArea.BackgroundColor3 = selfLib.Theme.Background
+    contentArea.BorderSizePixel = 0
+    contentArea.Size = UDim2.new(1, -24, 1, -24)
+    contentArea.Position = UDim2.new(0, 12, 0, 12)
+    contentArea.ZIndex = 1
+    contentArea.Parent = rootFrame
+    thisWindow.ContentArea = contentArea
+
+    local contentCorner = Instance.new("UICorner")
+    contentCorner.Parent = contentArea
+
+    ------------------------------------------------------------------
+    -- Dock
+    ------------------------------------------------------------------
+    local tabBar = Instance.new("Frame")
+    tabBar.Name = "TabBar"
+    tabBar.BackgroundColor3 = selfLib.Theme.Background
+    tabBar.BorderSizePixel = 0
+    tabBar.Size = UDim2.new(0, 420, 0, 56)
+    tabBar.AnchorPoint = Vector2.new(0.5, 1)
+    tabBar.Position = UDim2.new(0.5, 0, 1, -4)
+    tabBar.Parent = barGui
+
+    local tabBarCorner = Instance.new("UICorner")
+    tabBarCorner.Parent = tabBar
+
+    local tabHolder = Instance.new("Frame")
+    tabHolder.Name = "TabHolder"
+    tabHolder.BackgroundTransparency = 1
+    tabHolder.Size = UDim2.new(1, -10, 1, -8)
+    tabHolder.Position = UDim2.new(0, 5, 0, 4)
+    tabHolder.Parent = tabBar
+    thisWindow.TabBar = tabHolder
+
+    local tabList = Instance.new("UIListLayout")
+    tabList.FillDirection = Enum.FillDirection.Horizontal
+    tabList.SortOrder = Enum.SortOrder.LayoutOrder
+    tabList.Padding = UDim.new(0, 6)
+    tabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabList.VerticalAlignment = Enum.VerticalAlignment.Center
+    tabList.Parent = tabHolder
+
+    applyCornerRadius(corner, thisWindow)
+    applyCornerRadius(contentCorner, thisWindow)
+    applyCornerRadius(tabBarCorner, thisWindow, 1)
+
+    function thisWindow:ApplyPadding()
+        local pad = self.Padding
+        for _, tabObj in pairs(self.Tabs) do
+            local content = tabObj.Content
+            if content and content.Parent then
+                content.Size = UDim2.new(1, -pad, 1, -pad)
+                content.Position = UDim2.new(0, pad / 2, 0, pad / 2)
+                local list = content:FindFirstChildOfClass("UIListLayout")
+                if list then
+                    list.Padding = UDim.new(0, math.max(2, pad / 3))
+                end
+            end
+        end
+    end
+
+    local function updateTabHolderSize()
+        local total = tabList.AbsoluteContentSize.X
+        local padding = thisWindow.Padding
+        local dockScale = thisWindow.DockScale or 1
+
+        local extra = math.max(20, padding * 2)
+        local baseWidth = math.max(total + extra, 120)
+        local baseHeight = 56
+
+        tabBar.Size = UDim2.new(0, baseWidth * dockScale, 0, baseHeight * dockScale)
+        tabHolder.Size = UDim2.new(1, -padding, 1, -math.max(4, padding / 2))
+        tabHolder.Position = UDim2.new(0, padding / 2, 0, math.max(2, padding / 4))
+
+        local align = thisWindow.TabBarAlignment
+        local offset = thisWindow.TabBarOffset
+
+        if align == "Left" then
+            tabBar.AnchorPoint = Vector2.new(0, 1)
+            tabBar.Position = UDim2.new(0, 10 + offset, 1, -4)
+        elseif align == "Right" then
+            tabBar.AnchorPoint = Vector2.new(1, 1)
+            tabBar.Position = UDim2.new(1, -10 + offset, 1, -4)
+        else
+            tabBar.AnchorPoint = Vector2.new(0.5, 1)
+            tabBar.Position = UDim2.new(0.5, offset, 1, -4)
+        end
+
+        -- update home tab bar position whenever layout changes
+        thisWindow.HomeTabBarPos = tabBar.Position
+    end
+
+    thisWindow.UpdateTabDock = updateTabHolderSize
+    tabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabHolderSize)
+    updateTabHolderSize()
+
+    -- initial home positions
+    thisWindow.HomeContainerPos = thisWindow.Container.Position
+    thisWindow.HomeTabBarPos    = tabBar.Position
+
+    ------------------------------------------------------------------
+    -- Animations using home positions
+    ------------------------------------------------------------------
+    local function playOpenAnimation(win)
+        win.MainGui.Enabled = true
+        win.BarGui.Enabled = true
+        if win.ClockGui then win.ClockGui.Enabled = true end
+
+        win.Blur.Enabled = true
+
+        local targetPos = win.HomeContainerPos or win.Container.Position
+        local barTarget = win.HomeTabBarPos    or win.TabBar.Position
+
+        if not win.AnimateOnOpen then
+            win.Container.Position = targetPos
+            win.TabBar.Position    = barTarget
+            win.Blur.Size = 18
+            return
+        end
+
+        win.Blur.Size = 0
+
+        local tweenInfoMain = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local fromPos = UDim2.new(1.2, 0, targetPos.Y.Scale, targetPos.Y.Offset)
+        win.Container.Position = fromPos
+        TweenService:Create(win.Container, tweenInfoMain, { Position = targetPos }):Play()
+
+        local tweenInfoBar = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local barFrom = UDim2.new(barTarget.X.Scale, barTarget.X.Offset, 1, 60)
+        win.TabBar.Position = barFrom
+        TweenService:Create(win.TabBar, tweenInfoBar, { Position = barTarget }):Play()
+
+        TweenService:Create(win.Blur, TweenInfo.new(0.18), { Size = 18 }):Play()
+    end
+
+    local function playCloseAnimation(win)
+        if not win.AnimateOnOpen then
+            win.MainGui.Enabled = false
+            win.BarGui.Enabled = false
+            if win.ClockGui then win.ClockGui.Enabled = false end
+            win.Blur.Enabled = false
+            win.Blur.Size = 0
+            return
+        end
+
+        local tweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+        local endPosContainer = UDim2.new(1.2, 0, win.Container.Position.Y.Scale, win.Container.Position.Y.Offset)
+        TweenService:Create(win.Container, tweenInfo, { Position = endPosContainer }):Play()
+
+        local endPosTab = UDim2.new(win.TabBar.Position.X.Scale, win.TabBar.Position.X.Offset, 1, 60)
+        TweenService:Create(win.TabBar, tweenInfo, { Position = endPosTab }):Play()
+
+        TweenService:Create(win.Blur, tweenInfo, { Size = 0 }):Play()
+
+        task.delay(tweenInfo.Time, function()
+            win.MainGui.Enabled = false
+            win.BarGui.Enabled = false
+            if win.ClockGui then win.ClockGui.Enabled = false end
+            win.Blur.Enabled = false
+            win.Blur.Size = 0
+        end)
+    end
+
+    ------------------------------------------------------------------
+    -- Toggle key with IsOpen flag
+    ------------------------------------------------------------------
+    thisWindow.IsOpen = true
+
+    table.insert(thisWindow.Connections, UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == thisWindow.DestroyKey then
+            if thisWindow.IsOpen then
+                thisWindow.IsOpen = false
+                playCloseAnimation(thisWindow)
+            else
+                thisWindow.IsOpen = true
+                playOpenAnimation(thisWindow)
+            end
+        end
+    end))
+
+    playOpenAnimation(thisWindow)
+    thisWindow.IsOpen = true
+
+    thisWindow.Blur.Enabled = true
+    thisWindow.Blur.Size = 18
+
+    return thisWindow
+end
+
+----------------------------------------------------------------------
+-- Window methods
+----------------------------------------------------------------------
+
+function Window:SetToggleKey(keyCode)
+    self.DestroyKey = keyCode
+end
+
+function Window:SetTabBarAlignment(alignment)
+    alignment = alignment or "Center"
+    alignment = string.lower(alignment)
+    if alignment == "left" then
+        self.TabBarAlignment = "Left"
+    elseif alignment == "right" then
+        self.TabBarAlignment = "Right"
+    else
+        self.TabBarAlignment = "Center"
+    end
+    if self.UpdateTabDock then
+        self:UpdateTabDock()
+    end
+end
+
+function Window:SetTabBarOffset(pixels)
+    self.TabBarOffset = tonumber(pixels) or 0
+    if self.UpdateTabDock then
+        self:UpdateTabDock()
+    end
+end
+
+function Window:SetPadding(pixels)
+    self.Padding = math.max(0, tonumber(pixels) or 10)
+    if self.UpdateTabDock then
+        self:UpdateTabDock()
+    end
+    if self.ApplyPadding then
+        self:ApplyPadding()
+    end
+end
+
+function Window:SetCornerRadius(pixels)
+    self.CornerRadius = math.max(0, tonumber(pixels) or 10)
+
+    if self.Root then
+        local mainCorner = self.Root:FindFirstChildOfClass("UICorner")
+        if mainCorner then
+            applyCornerRadius(mainCorner, self)
+        end
+    end
+
+    if self.ContentArea then
+        local contentCorner = self.ContentArea:FindFirstChildOfClass("UICorner")
+        if contentCorner then
+            applyCornerRadius(contentCorner, self)
+        end
+    end
+
+    if self.BarGui then
+        local barFrame = self.BarGui:FindFirstChild("TabBar", true)
+        if barFrame then
+            local barCorner = barFrame:FindFirstChildOfClass("UICorner")
+            if barCorner then
+                applyCornerRadius(barCorner, self, 1)
+            end
+        end
+    end
+
+    if self.ClockBar then
+        local clkCorner = self.ClockBar:FindFirstChildOfClass("UICorner")
+        if clkCorner then
+            applyCornerRadius(clkCorner, self, 0.8)
+        end
+    end
+end
+
+function Window:SetDockScale(scale)
+    self.DockScale = math.clamp(tonumber(scale) or 1, 0.6, 1.8)
+    if self.UpdateTabDock then
+        self:UpdateTabDock()
+    end
+    for _, tabObj in pairs(self.Tabs) do
+        local btn = tabObj.Button
+        if btn then
+            local s = self.DockScale
+            btn.Size = UDim2.new(0, 40 * s, 0, 40 * s)
+            btn.TextSize = 16 * s
+        end
+    end
+end
+
+function Window:SetAnimations(enabled)
+    self.AnimateOnOpen = not not enabled
+end
+
+function Window:SetAnchorMode(mode)
+    mode = string.lower(tostring(mode or "Center"))
+    if mode == "left" then
+        self.AnchorMode = "Left"
+    else
+        self.AnchorMode = "Center"
+    end
+    if self.SetSize then
+        self:SetSize(self.Width, self.Height)
+    end
+end
+
+function Window:SetAnchorOffsetX(offset)
+    self.AnchorOffsetX = tonumber(offset) or self.AnchorOffsetX
+    if self.SetSize then
+        self:SetSize(self.Width, self.Height)
+    end
+end
+
+function Window:SetAnchorOffsetY(offset)
+    self.AnchorOffsetY = tonumber(offset) or self.AnchorOffsetY or 0
+    if self.SetSize then
+        self:SetSize(self.Width, self.Height)
+    end
+end
+
+function Window:SetClockScale(scale)
+    scale = tonumber(scale) or 1
+    scale = math.clamp(scale, 0.5, 2)
+    self.ClockScale = scale
+
+    if not self.ClockBar then return end
+
+    local uiScale = self.ClockBar:FindFirstChildOfClass("UIScale")
+    if not uiScale then
+        uiScale = Instance.new("UIScale")
+        uiScale.Parent = self.ClockBar
+    end
+    uiScale.Scale = scale
+end
+
+function Window:SaveConfig(name, data)
+    local store = getConfigStore()
+    store[name or "default"] = data
+end
+
+function Window:LoadConfig(name)
+    local store = getConfigStore()
+    return store[name or "default"]
+end
+
+function Window:Destroy()
+    for _, conn in ipairs(self.Connections or {}) do
+        if conn.Connected then
+            conn:Disconnect()
+        end
+    end
+
+    if self.MainGui and self.MainGui.Parent then
+        self.MainGui:Destroy()
+    end
+    if self.BarGui and self.BarGui.Parent then
+        self.BarGui:Destroy()
+    end
+    if self.ClockGui and self.ClockGui.Parent then
+        self.ClockGui:Destroy()
+    end
+
+    if self.Blur then
+        self.Blur.Enabled = false
+        self.Blur.Size = 0
+    end
+end
+
+function Window:ShowTab(tab)
+    local theme = self.Library.Theme
+    if self.ActiveTab == tab then return end
+    for _, t in pairs(self.Tabs) do
+        t.Content.Visible = false
+        t.Button.BackgroundColor3 = theme.TabInactive
+        t.Button.TextColor3 = theme.SubText
+    end
+    tab.Content.Visible = true
+    tab.Button.BackgroundColor3 = theme.TabActive
+    tab.Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    self.ActiveTab = tab
+end
+
+local function getInitials(name)
+    name = tostring(name or "")
+    if #name == 0 then return "?" end
+    return string.upper(string.sub(name, 1, 1))
+end
+
+function Window:AddTab(name)
+    local theme = self.Library.Theme
+    local pad = self.Padding
+    local scale = self.DockScale or 1
+
+    local tabButton = Instance.new("TextButton")
+    tabButton.Name = name .. "_TabButton"
+    tabButton.Parent = self.TabBar
+    tabButton.Size = UDim2.new(0, 40 * scale, 0, 40 * scale)
+    tabButton.BackgroundColor3 = theme.TabInactive
+    tabButton.BorderSizePixel = 0
+    tabButton.AutoButtonColor = true
+    tabButton.Font = Enum.Font.GothamBold
+    tabButton.TextSize = 16 * scale
+    tabButton.Text = getInitials(name)
+    tabButton.TextColor3 = theme.Text
+
+    local buttonCorner = Instance.new("UICorner")
+    applyCornerRadius(buttonCorner, self, 0.8)
+    buttonCorner.Parent = tabButton
+
+    local contentFrame = Instance.new("ScrollingFrame")
+    contentFrame.Name = name .. "_Content"
+    contentFrame.Parent = self.ContentArea
+    contentFrame.Size = UDim2.new(1, -pad, 1, -pad)
+    contentFrame.Position = UDim2.new(0, pad / 2, 0, pad / 2)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.BorderSizePixel = 0
+    contentFrame.ScrollBarThickness = 4
+    contentFrame.Visible = false
+    contentFrame.ZIndex = 1
+
+    local list = Instance.new("UIListLayout")
+    list.FillDirection = Enum.FillDirection.Vertical
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, math.max(2, pad / 3))
+    list.Parent = contentFrame
+
+    local tabObj = setmetatable({
+        Window  = self,
+        Name    = name,
+        Button  = tabButton,
+        Content = contentFrame,
+    }, Tab)
+
+    self.Tabs[name] = tabObj
+
+    local conn = tabButton.MouseButton1Click:Connect(function()
+        self:ShowTab(tabObj)
+    end)
+    table.insert(self.Connections, conn)
+
+    if self.ApplyPadding then
+        self:ApplyPadding()
+    end
+
+    if not self.ActiveTab then
+        self:ShowTab(tabObj)
+    end
+
+    if self.UpdateTabDock then
+        self:UpdateTabDock()
+    end
+
+    return tabObj
+end
+
+----------------------------------------------------------------------
+-- Tab methods
+----------------------------------------------------------------------
+
+function Tab:AddLabel(text)
+    local theme = self.Window.Library.Theme
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = self.Content
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -10, 0, 24)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = theme.Text
+    label.Text = text
+
+    return label
+end
+
+function Tab:AddButton(text, callback)
+    callback = callback or function() end
+    local theme = self.Window.Library.Theme
+
+    local button = Instance.new("TextButton")
+    button.Name = "Button"
+    button.Parent = self.Content
+    button.Size = UDim2.new(1, -10, 0, 28)
+    button.BackgroundColor3 = theme.Accent2
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = true
+    button.Font = Enum.Font.Gotham
+    button.TextSize = 14
+    button.TextColor3 = theme.Text
+    button.Text = text
+
+    local corner = Instance.new("UICorner")
+    applyCornerRadius(corner, self.Window, 0.8)
+    corner.Parent = button
+
+    local conn = button.MouseButton1Click:Connect(function()
+        task.spawn(callback)
+    end)
+    table.insert(self.Window.Connections, conn)
+
+    return button
+end
+
+function Tab:AddToggle(text, default, callback)
+    callback = callback or function() end
+    local theme = self.Window.Library.Theme
+
+    local holder = Instance.new("Frame")
+    holder.Name = "Toggle"
+    holder.Parent = self.Content
+    holder.Size = UDim2.new(1, -10, 0, 28)
+    holder.BackgroundTransparency = 1
+
+    local button = Instance.new("TextButton")
+    button.Name = "ToggleButton"
+    button.Parent = holder
+    button.Size = UDim2.new(1, 0, 1, 0)
+    button.BackgroundColor3 = theme.Accent2
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.Font = Enum.Font.Gotham
+    button.TextSize = 14
+    button.TextColor3 = theme.Text
+    button.TextXAlignment = Enum.TextXAlignment.Center
+    button.Text = text
+
+    local corner = Instance.new("UICorner")
+    applyCornerRadius(corner, self.Window, 0.8)
+    corner.Parent = button
+
+    local state = default and true or false
+
+    local function update()
+        if state then
+            button.BackgroundColor3 = theme.Accent
+            button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            button.BackgroundColor3 = theme.Accent2
+            button.TextColor3 = theme.Text
+        end
+    end
+
+    update()
+    callback(state)
+
+    local conn = button.MouseButton1Click:Connect(function()
+        state = not state
+        update()
+        task.spawn(callback, state)
+    end)
+    table.insert(self.Window.Connections, conn)
+
+    return {
+        Set = function(_, v)
+            state = v and true or false
+            update()
+            callback(state)
+        end,
+        Get = function()
+            return state
+        end,
+    }
+end
+
+function Tab:AddSlider(text, min, max, default, callback)
+    callback = callback or function() end
+    min = min or 0
+    max = max or 100
+    default = default or min
+
+    local theme = self.Window.Library.Theme
+
+    local holder = Instance.new("Frame")
+    holder.Name = "Slider"
+    holder.Parent = self.Content
+    holder.Size = UDim2.new(1, -10, 0, 40)
+    holder.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = holder
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.Size = UDim2.new(1, -60, 0.5, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = theme.Text
+    label.Text = string.format("%s: %d", text, default)
+
+    local valueBox = Instance.new("TextBox")
+    valueBox.Name = "ValueBox"
+    valueBox.Parent = holder
+    valueBox.Size = UDim2.new(0, 50, 0, 20)
+    valueBox.Position = UDim2.new(1, -52, 0, 2)
+    valueBox.BackgroundColor3 = theme.Accent2
+    valueBox.BorderSizePixel = 0
+    valueBox.Font = Enum.Font.Gotham
+    valueBox.TextSize = 14
+    valueBox.TextColor3 = theme.Text
+    valueBox.Text = tostring(default)
+    valueBox.ClearTextOnFocus = false
+
+    local vbCorner = Instance.new("UICorner")
+    applyCornerRadius(vbCorner, self.Window, 0.6)
+    vbCorner.Parent = valueBox
+
+    local bar = Instance.new("Frame")
+    bar.Name = "Bar"
+    bar.Parent = holder
+    bar.BackgroundColor3 = theme.Accent2
+    bar.BorderSizePixel = 0
+    bar.Position = UDim2.new(0, 0, 0.6, 0)
+    bar.Size = UDim2.new(1, 0, 0, 6)
+
+    local barCorner = Instance.new("UICorner")
+    applyCornerRadius(barCorner, self.Window, 0.3)
+    barCorner.Parent = bar
+
+    local fill = Instance.new("Frame")
+    fill.Name = "Fill"
+    fill.Parent = bar
+    fill.BackgroundColor3 = theme.Accent
+    fill.BorderSizePixel = 0
+    fill.Size = UDim2.new(0, 0, 1, 0)
+
+    local fillCorner = Instance.new("UICorner")
+    applyCornerRadius(fillCorner, self.Window, 0.3)
+    fillCorner.Parent = fill
+
+    local knob = Instance.new("Frame")
+    knob.Name = "Knob"
+    knob.Parent = bar
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BorderSizePixel = 0
+    knob.Size = UDim2.new(0, 10, 0, 14)
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.Position = UDim2.new(0, 0, 0.5, 0)
+
+    local knobCorner = Instance.new("UICorner")
+    applyCornerRadius(knobCorner, self.Window, 1)
+    knobCorner.Parent = knob
+
+    local dragging = false
+    local currentValue = default
+
+    local function applyValue(v)
+        v = math.clamp(v, min, max)
+        local a = (v - min) / (max - min)
+        currentValue = v
+        fill.Size = UDim2.new(a, 0, 1, 0)
+        knob.Position = UDim2.new(a, 0, 0.5, 0)
+        label.Text = string.format("%s: %d", text, v)
+        valueBox.Text = tostring(v)
+        callback(v)
+    end
+
+    local function setFromX(x)
+        local absPos = bar.AbsolutePosition.X
+        local absSize = bar.AbsoluteSize.X
+        local alpha = math.clamp((x - absPos) / absSize, 0, 1)
+        local value = math.floor(min + (max - min) * alpha + 0.5)
+        applyValue(value)
+    end
+
+    local uis = UserInputService
+
+    local c1 = bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            setFromX(input.Position.X)
+        end
+    end)
+    table.insert(self.Window.Connections, c1)
+
+    local c2 = bar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    table.insert(self.Window.Connections, c2)
+
+    local c3 = uis.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            setFromX(input.Position.X)
+        end
+    end)
+    table.insert(self.Window.Connections, c3)
+
+    valueBox.FocusLost:Connect(function(enterPressed)
+        if not enterPressed then return end
+        local num = tonumber(valueBox.Text)
+        if not num then
+            valueBox.Text = tostring(currentValue)
+            return
+        end
+        applyValue(num)
+    end)
+
+    applyValue(default)
+
+    return {
+        Set = function(_, v) applyValue(v) end,
+        Get = function() return currentValue end,
+    }
+end
+
+function Tab:AddKeybind(text, initialKey, callback)
+    callback = callback or function() end
+
+    local theme = self.Window.Library.Theme
+
+    local holder = Instance.new("Frame")
+    holder.Name = "Keybind"
+    holder.Parent = self.Content
+    holder.Size = UDim2.new(1, -10, 0, 28)
+    holder.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = holder
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.Size = UDim2.new(1, -80, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = theme.Text
+    label.Text = text
+
+    local button = Instance.new("TextButton")
+    button.Name = "KeyButton"
+    button.Parent = holder
+    button.Size = UDim2.new(0, 60, 0, 24)
+    button.Position = UDim2.new(1, -62, 0.5, -12)
+    button.BackgroundColor3 = theme.Accent2
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.Gotham
+    button.TextSize = 12
+    button.TextColor3 = theme.Text
+
+    local corner = Instance.new("UICorner")
+    applyCornerRadius(corner, self.Window, 0.6)
+    corner.Parent = button
+
+    local currentKey = initialKey
+    if typeof(currentKey) ~= "EnumItem" or currentKey.EnumType ~= Enum.KeyCode then
+        currentKey = Enum.KeyCode.RightShift
+    end
+    button.Text = currentKey.Name
+
+    local listening = false
+
+    local function setKey(keyCode)
+        if typeof(keyCode) ~= "EnumItem" or keyCode.EnumType ~= Enum.KeyCode then
+            return
+        end
+        currentKey = keyCode
+        button.Text = currentKey.Name
+        callback(currentKey)
+    end
+
+    local c = button.MouseButton1Click:Connect(function()
+        if listening then return end
+        listening = true
+        button.Text = "..."
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode ~= Enum.KeyCode.Unknown then
+                setKey(input.KeyCode)
+                listening = false
+                if conn and conn.Connected then
+                    conn:Disconnect()
+                end
+            end
+        end)
+    end)
+    table.insert(self.Window.Connections, c)
+
+    return {
+        Get = function() return currentKey end,
+        Set = function(_, keyCode) setKey(keyCode) end,
+    }
+end
+
+function Tab:AddTextBox(labelText, placeholder, defaultText, onSubmit)
+    onSubmit = onSubmit or function() end
+
+    local theme = self.Window.Library.Theme
+
+    local holder = Instance.new("Frame")
+    holder.Name = "TextBox"
+    holder.Parent = self.Content
+    holder.Size = UDim2.new(1, -10, 0, 28)
+    holder.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = holder
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = theme.Text
+    label.Text = labelText
+
+    local box = Instance.new("TextBox")
+    box.Name = "Input"
+    box.Parent = holder
+    box.Size = UDim2.new(0.5, -4, 1, 0)
+    box.Position = UDim2.new(0.5, 4, 0, 0)
+    box.BackgroundColor3 = theme.Accent2
+    box.BorderSizePixel = 0
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 14
+    box.TextColor3 = theme.Text
+    box.PlaceholderText = placeholder or ""
+    box.Text = defaultText or ""
+
+    local corner = Instance.new("UICorner")
+    applyCornerRadius(corner, self.Window, 0.8)
+    corner.Parent = box
+
+    box.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            onSubmit(box.Text)
+        end
+    end)
+
+    return box
+end
+
+function Tab:AddDropdown(text, items, default, callback)
+    callback = callback or function() end
+    items = items or {}
+
+    local theme = self.Window.Library.Theme
+
+    local holder = Instance.new("Frame")
+    holder.Name = "Dropdown"
+    holder.Parent = self.Content
+    holder.Size = UDim2.new(1, -10, 0, 32)
+    holder.BackgroundTransparency = 1
+
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Parent = holder
+    header.BackgroundTransparency = 1
+    header.Size = UDim2.new(1, 0, 0, 32)
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = header
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = theme.Text
+    label.Text = text
+
+    local button = Instance.new("TextButton")
+    button.Name = "MainButton"
+    button.Parent = header
+    button.Size = UDim2.new(0.5, -4, 1, 0)
+    button.Position = UDim2.new(0.5, 4, 0, 0)
+    button.BackgroundColor3 = theme.Accent2
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.Gotham
+    button.TextSize = 14
+    button.TextColor3 = theme.Text
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.Text = tostring(default or "Select")
+
+    local btnCorner = Instance.new("UICorner")
+    applyCornerRadius(btnCorner, self.Window, 0.8)
+    btnCorner.Parent = button
+
+    local menu = Instance.new("Frame")
+    menu.Name = "Menu"
+    menu.Parent = holder
+    menu.BackgroundColor3 = theme.Background
+    menu.BorderSizePixel = 0
+    menu.Position = UDim2.new(0.5, 4, 0, 34)
+    menu.Size = UDim2.new(0.5, -4, 0, 0)
+    menu.Visible = false
+    menu.ClipsDescendants = true
+    menu.ZIndex = 50
+
+    local menuCorner = Instance.new("UICorner")
+    applyCornerRadius(menuCorner, self.Window, 0.8)
+    menuCorner.Parent = menu
+
+    local list = Instance.new("UIListLayout")
+    list.FillDirection = Enum.FillDirection.Vertical
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, 2)
+    list.Parent = menu
+
+    local opened = false
+    local currentValue = default
+    local baseHeight = 32
+    local searchBox
+
+    local function updateHolderHeight()
+        if opened then
+            holder.Size = UDim2.new(1, -10, 0, baseHeight + menu.Size.Y.Offset + 4)
+        else
+            holder.Size = UDim2.new(1, -10, 0, baseHeight)
+        end
+    end
+
+    local function rebuildMenu(filterText)
+        filterText = filterText or ""
+        filterText = string.lower(filterText)
+
+        for _, child in ipairs(menu:GetChildren()) do
+            if child:IsA("TextButton") or child:IsA("TextBox") then
+                child:Destroy()
+            end
+        end
+
+        searchBox = Instance.new("TextBox")
+        searchBox.Name = "Search"
+        searchBox.Parent = menu
+        searchBox.BackgroundColor3 = theme.Accent2
+        searchBox.BorderSizePixel = 0
+        searchBox.Size = UDim2.new(1, -4, 0, 24)
+        searchBox.Position = UDim2.new(0, 2, 0, 2)
+        searchBox.Font = Enum.Font.Gotham
+        searchBox.TextSize = 14
+        searchBox.TextColor3 = theme.Text
+        searchBox.PlaceholderText = "Search..."
+        searchBox.Text = filterText or ""
+        searchBox.ZIndex = 51
+
+        local searchCorner = Instance.new("UICorner")
+        applyCornerRadius(searchCorner, self.Window, 0.6)
+        searchCorner.Parent = searchBox
+
+        local visibleCount = 0
+
+        local function addOption(v)
+            local opt = Instance.new("TextButton")
+            opt.Name = "Option"
+            opt.Parent = menu
+            opt.BackgroundColor3 = theme.Accent2
+            opt.BorderSizePixel = 0
+            opt.Size = UDim2.new(1, -4, 0, 24)
+            opt.Font = Enum.Font.Gotham
+            opt.TextSize = 14
+            opt.TextColor3 = theme.Text
+            opt.TextXAlignment = Enum.TextXAlignment.Left
+            opt.Text = tostring(v)
+            opt.ZIndex = 51
+
+            local c = Instance.new("UICorner")
+            applyCornerRadius(c, self.Window, 0.6)
+            c.Parent = opt
+
+            visibleCount += 1
+
+            local conn = opt.MouseButton1Click:Connect(function()
+                currentValue = v
+                button.Text = tostring(v)
+                callback(v)
+                opened = false
+                menu.Visible = false
+                updateHolderHeight()
+            end)
+            table.insert(self.Window.Connections, conn)
+        end
+
+        for _, v in ipairs(items) do
+            local s = tostring(v)
+            if filterText == "" or string.find(string.lower(s), filterText, 1, true) then
+                addOption(v)
+            end
+        end
+
+        local h = 24 + 4 + visibleCount * 26 + 4
+        menu.Size = UDim2.new(menu.Size.X.Scale, menu.Size.X.Offset, 0, h)
+        updateHolderHeight()
+
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            rebuildMenu(searchBox.Text)
+        end)
+    end
+
+    rebuildMenu("")
+
+    local conn = button.MouseButton1Click:Connect(function()
+        opened = not opened
+        if opened then
+            rebuildMenu(searchBox and searchBox.Text or "")
+        end
+        menu.Visible = opened
+        updateHolderHeight()
+    end)
+    table.insert(self.Window.Connections, conn)
+
+    if default ~= nil then
+        currentValue = default
+        button.Text = tostring(default)
+        callback(default)
+    end
+
+    local api = {}
+
+    function api:Set(value)
+        currentValue = value
+        button.Text = tostring(value)
+        callback(value)
+    end
+
+    function api:Get()
+        return currentValue
+    end
+
+    function api:SetItems(newItems)
+        items = newItems or {}
+        if opened then
+            rebuildMenu(searchBox and searchBox.Text or "")
+        end
+    end
+
+    return api
+end
+
+return Library
