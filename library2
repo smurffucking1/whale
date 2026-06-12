@@ -288,7 +288,7 @@ tabList.FillDirection = Enum.FillDirection.Horizontal
 tabList.SortOrder = Enum.SortOrder.LayoutOrder
 tabList.Padding = UDim.new(0, 6)
 tabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-tabList.VerticalAlignment = Enum.VerticalAlignment.Center
+tabList.VerticalAlignment   = Enum.VerticalAlignment.Center
 tabList.Parent = tabHolder
 
 applyCornerRadius(corner, thisWindow)
