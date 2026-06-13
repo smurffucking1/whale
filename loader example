@@ -1,7 +1,7 @@
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/smurffucking1/whale/refs/heads/main/library1"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/smurffucking1/whale/refs/heads/main/lib3"))()
 
 local Window = Library:CreateWindow({
     Title        = "My New UI",
