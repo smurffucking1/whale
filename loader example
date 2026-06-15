@@ -1,11 +1,78 @@
-local StarterGui = game:GetService("StarterGui")
+--// SERVICES -----------------------------------------------------------
+
+local Players     = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local StarterGui  = game:GetService("StarterGui")
+
+-- Optional: hide backpack CoreGui just to make the UI stand out
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/smurffucking1/whale/refs/heads/main/lib3"))()
+local LocalPlayer = Players.LocalPlayer
+
+--// EXECUTOR FILE CONFIG ----------------------------------------------
+
+local SAVE_FOLDER = "BoatSaves"               -- reuse same folder name
+local CONFIG_FILE = SAVE_FOLDER .. "/gui_config.json"
+
+local function ensureFolder()
+    if not listfiles or not writefile then return end
+    local ok = pcall(function()
+        listfiles(SAVE_FOLDER)
+    end)
+    if not ok then
+        pcall(function()
+            writefile(SAVE_FOLDER .. "/.init", "init")
+        end)
+    end
+end
+
+ensureFolder()
+
+local function saveGuiConfig(configTable)
+    if not writefile then
+        warn("[GUI Config] writefile not supported in this executor.")
+        return
+    end
+    ensureFolder()
+    local ok, json = pcall(function()
+        return HttpService:JSONEncode(configTable)
+    end)
+    if not ok then
+        warn("[GUI Config] JSON encode failed:", json)
+        return
+    end
+    writefile(CONFIG_FILE, json)
+end
+
+local function loadGuiConfig()
+    if not readfile then
+        warn("[GUI Config] readfile not supported in this executor.")
+        return nil
+    end
+    local ok, content = pcall(readfile, CONFIG_FILE)
+    if not ok then
+        return nil
+    end
+    local ok2, data = pcall(function()
+        return HttpService:JSONDecode(content)
+    end)
+    if not ok2 then
+        warn("[GUI Config] JSON decode failed:", data)
+        return nil
+    end
+    return data
+end
+
+--// LOAD UI LIBRARY ----------------------------------------------------
+
+local Library = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/smurffucking1/whale/refs/heads/main/lib3"
+))()
+
+--// CREATE WINDOW ------------------------------------------------------
 
 local Window = Library:CreateWindow({
     Title        = "My New UI",
-    SubTitle     = "v1.0",
     DefaultTheme = "Dark",
     DestroyKey   = Enum.KeyCode.RightShift,
 })
@@ -14,133 +81,152 @@ local MainTab     = Window:AddTab("Main")
 local MiscTab     = Window:AddTab("Misc")
 local SettingsTab = Window:AddTab("Settings")
 
--- load config AFTER window exists
+--// CONFIG TABLE + APPLY TO WINDOW ------------------------------------
+
 local CONFIG_NAME = "my_new_ui"
-local config = Window:LoadConfig(CONFIG_NAME) or {
+
+local config = loadGuiConfig() or {
     Godmode    = false,
     WalkSpeed  = 16,
     Width      = Window.Width,
     Height     = Window.Height,
     DockScale  = 1,
     AnchorX    = Window.AnchorOffsetX or 35,
-    ClockScale = 1, -- NEW: default clock scale
+    AnchorY    = Window.AnchorOffsetY or 0,
+    ClockScale = 1,
 }
 
--- clamp any crazy saved values so the UI stays on-screen
-config.Width      = math.clamp(config.Width or Window.Width, 300, 900)
-config.Height     = math.clamp(config.Height or Window.Height, 220, 700)
-config.DockScale  = math.clamp(config.DockScale or 1, 0.6, 1.8)
-config.AnchorX    = math.clamp(config.AnchorX or 35, 0, 300)
-config.ClockScale = math.clamp(config.ClockScale or 1, 0.5, 2) -- NEW: clamp clock scale
+config.Width      = math.clamp(config.Width      or Window.Width, 300, 900)
+config.Height     = math.clamp(config.Height     or Window.Height, 220, 700)
+config.DockScale  = math.clamp(config.DockScale  or 1,            0.6,  1.8)
+config.AnchorX    = math.clamp(config.AnchorX    or 35,           0,    300)
+config.AnchorY    = math.clamp(config.AnchorY    or 0,            -300, 300)
+config.ClockScale = math.clamp(config.ClockScale or 1,            0.5,  2)
 
-local function autosave()
-    Window:SaveConfig(CONFIG_NAME, config)
+local function autosaveConfig()
+    saveGuiConfig(config)
 end
 
--- apply size/position from config ONCE here
 Window:SetAnchorMode("Left")
 Window:SetWidth(config.Width)
 Window:SetHeight(config.Height)
 Window:SetAnchorOffsetX(config.AnchorX)
+Window:SetAnchorOffsetY(config.AnchorY or 0)
+Window:SetClockScale(config.ClockScale)
 Window:SetDockScale(config.DockScale)
-Window:SetClockScale(config.ClockScale) -- NEW: apply clock scale on startup
 
--- MAIN TAB (no toggles here)
+if Window.UpdateTabDock then
+    Window:UpdateTabDock()
+end
+
+--// MAIN TAB ----------------------------------------------------------
+
 MainTab:AddButton("Do something", function()
-    print("Clicked")
+    print("[Main] Button clicked")
 end)
 
 MainTab:AddSlider("WalkSpeed", 16, 100, config.WalkSpeed, function(v)
     config.WalkSpeed = v
-    print("Slider value:", v)
-    autosave()
+    print("[Main] WalkSpeed set to:", v)
+    autosaveConfig()
 end)
 
--- MISC TAB (all toggles here, pill style)
+--// MISC TAB ----------------------------------------------------------
+
 MiscTab:AddToggle("Godmode", config.Godmode, function(value)
     config.Godmode = value
-    print("Godmode:", value)
-    autosave()
+    print("[Misc] Godmode:", value)
+    autosaveConfig()
 end)
 
--- SETTINGS TAB
+MiscTab:AddButton("Next Mode", function()
+    print("[Misc] Next Mode clicked")
+end)
 
--- keybind to toggle UI
+--// SETTINGS TAB ------------------------------------------------------
+
 SettingsTab:AddKeybind("Toggle UI", Window.DestroyKey, function(newKey)
     Window:SetToggleKey(newKey)
+    print("[Settings] Toggle key changed to:", newKey.Name)
 end)
 
-SettingsTab:AddButton("Destroy UI", function()
-    Window:Destroy()
-end)
-
--- theme dropdown
-local themesDropdown = SettingsTab:AddDropdown("Theme", Library:GetThemes(), "Dark", function(themeName)
+SettingsTab:AddDropdown("Theme", Library:GetThemes(), "Dark", function(themeName)
     Library:SetTheme(themeName)
-    autosave()
+    print("[Settings] Theme set to:", themeName)
+    autosaveConfig()
 end)
 
--- taskbar alignment + offset
 SettingsTab:AddDropdown("Taskbar Align", {"Left","Center","Right"}, "Center", function(v)
     Window:SetTabBarAlignment(v)
-    autosave()
+    print("[Settings] Taskbar alignment:", v)
+    autosaveConfig()
 end)
 
 SettingsTab:AddSlider("Taskbar Offset", -200, 200, 0, function(v)
     Window:SetTabBarOffset(v)
-    autosave()
+    print("[Settings] Taskbar offset:", v)
+    autosaveConfig()
 end)
 
--- padding
 SettingsTab:AddSlider("GUI Padding Slider", 0, 40, Window.Padding or 10, function(v)
     Window:SetPadding(v)
-    autosave()
+    print("[Settings] Padding:", v)
+    autosaveConfig()
 end)
 
--- rounding
 SettingsTab:AddSlider("GUI Corner Radius", 0, 30, Window.CornerRadius or 18, function(v)
     Window:SetCornerRadius(v)
-    autosave()
+    print("[Settings] Corner radius:", v)
+    autosaveConfig()
 end)
 
--- bottom bar size
 SettingsTab:AddSlider("Taskbar Size", 60, 180, (config.DockScale or 1) * 100, function(v)
     local scale = v / 100
     config.DockScale = scale
     Window:SetDockScale(scale)
-    autosave()
+    print("[Settings] Taskbar size scale:", scale)
+    autosaveConfig()
 end)
 
--- opening animations
-SettingsTab:AddToggle("Animations", true, function(on)
-    Window:SetAnimations(on)
-    autosave()
-end)
-
--- GUI width/height sliders
 SettingsTab:AddSlider("GUI Width", 300, 900, config.Width, function(v)
     config.Width = v
     Window:SetWidth(v)
-    autosave()
+    print("[Settings] Width:", v)
+    autosaveConfig()
 end)
 
 SettingsTab:AddSlider("GUI Height", 220, 700, config.Height, function(v)
     config.Height = v
     Window:SetHeight(v)
-    autosave()
+    print("[Settings] Height:", v)
+    autosaveConfig()
 end)
 
--- GUI X offset (distance from left edge)
 SettingsTab:AddSlider("GUI X Offset", 0, 300, config.AnchorX, function(v)
     config.AnchorX = v
     Window:SetAnchorOffsetX(v)
-    autosave()
+    print("[Settings] X Offset:", v)
+    autosaveConfig()
 end)
 
--- NEW: Clock scale slider (0.5x – 2.0x)
+SettingsTab:AddSlider("GUI Y Offset", -300, 300, config.AnchorY or 0, function(v)
+    config.AnchorY = v
+    Window:SetAnchorOffsetY(v)
+    print("[Settings] Y Offset:", v)
+    autosaveConfig()
+end)
+
 SettingsTab:AddSlider("Clock Scale", 50, 200, config.ClockScale * 100, function(v)
     local scale = v / 100
     config.ClockScale = scale
     Window:SetClockScale(scale)
-    autosave()
+    print("[Settings] Clock scale:", scale)
+    autosaveConfig()
+end)
+
+SettingsTab:AddButton("Destroy UI", function()
+    if Window then
+        Window:Destroy()
+    end
+    print("[Settings] UI destroyed")
 end)
