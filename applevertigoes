@@ -3,7 +3,7 @@
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
--- - Live recolor of existing sliders & tab buttons when colors/themes change
+-- - Live recolor of sliders, buttons, tab buttons when colors/themes change
 -- - Dropdowns support SetOptions/Rebuild
 -- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
@@ -374,8 +374,8 @@ function UILib:CreateWindow(id)
     local frame = Instance.new("Frame")
     frame.Name = "Window"
     frame.AnchorPoint = Vector2.new(0,0)
-    frame.Size = UDim2.new(0,520,0,360)
-    frame.Position = UDim2.new(0.5,-260,0.5,-180)
+    frame.Size = UDim2.new(0,620,0,420)  -- larger default size
+    frame.Position = UDim2.new(0.5,-310,0.5,-210)
     frame.BackgroundColor3 = Style.WindowColor
     frame.BorderSizePixel = 0
     frame.Active = true
@@ -463,12 +463,33 @@ function UILib:CreateWindow(id)
     -- registries for recolor
     local sliderFills = {}
     local tabButtons = {}
+    local allButtons = {}   -- every button using Style.ButtonColor (ON toggles, normal buttons, color pickers)
+    local toggleButtons = {} -- map button -> state function
     local currentTabIndex = nil
 
     local function refreshSliders()
         for _, fill in ipairs(sliderFills) do
             if fill and fill.Parent then
                 fill.BackgroundColor3 = Style.SliderColor
+            end
+        end
+    end
+
+    local function refreshButtons()
+        for _, btn in ipairs(allButtons) do
+            if btn and btn.Parent then
+                btn.BackgroundColor3 = Style.ButtonColor
+            end
+        end
+        -- now fix toggles so OFF state stays dim
+        for btn, info in pairs(toggleButtons) do
+            if btn and btn.Parent then
+                local state = info.GetState()
+                if state then
+                    btn.BackgroundColor3 = Style.ButtonColor
+                else
+                    btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
+                end
             end
         end
     end
@@ -564,8 +585,8 @@ function UILib:CreateWindow(id)
         if resizing then
             local mp = UIS:GetMouseLocation()
             local delta = mp - resizeStart
-            local newW = clampNum(startSize.X.Offset + delta.X, 320, 900)
-            local newH = clampNum(startSize.Y.Offset + delta.Y, 220, 700)
+            local newW = clampNum(startSize.X.Offset + delta.X, 320, 1100)
+            local newH = clampNum(startSize.Y.Offset + delta.Y, 260, 800)
             frame.Size = UDim2.new(0,newW,0,newH)
         end
     end)
@@ -642,6 +663,7 @@ function UILib:CreateWindow(id)
             btn.Text = buttonText or "Button"
             btn.Parent = row
             local bC = Instance.new("UICorner", btn); bC.CornerRadius = UDim.new(0,4)
+            table.insert(allButtons, btn)
             btn.MouseButton1Click:Connect(function()
                 if callback then callback() end
             end)
@@ -694,6 +716,8 @@ function UILib:CreateWindow(id)
                 refresh()
                 if callback then callback(state) end
             end
+
+            toggleButtons[btn] = {GetState = function() return state end}
 
             btn.MouseButton1Click:Connect(function()
                 setState(not state)
@@ -932,6 +956,7 @@ function UILib:CreateWindow(id)
             btn.Text = "Pick"
             btn.Parent = row
             local bc2 = Instance.new("UICorner", btn); bc2.CornerRadius = UDim.new(0,4)
+            table.insert(allButtons, btn)
 
             local current = startColor
 
@@ -1195,6 +1220,7 @@ function UILib:CreateWindow(id)
                 Style.SliderColor = t.SliderColor
                 frame.BackgroundColor3 = Style.WindowColor
                 refreshSliders()
+                refreshButtons()
                 refreshTabButtons()
                 saveThemes()
                 saveConfig()
@@ -1213,6 +1239,7 @@ function UILib:CreateWindow(id)
         settingsSection:AddColorPicker("Button color", Style.ButtonColor, function(col)
             Style.ButtonColor = col
             Themes[CurrentThemeName].ButtonColor = col
+            refreshButtons()
             refreshTabButtons()
             saveThemes()
         end)
@@ -1242,7 +1269,6 @@ function UILib:CreateWindow(id)
             for n,_ in pairs(Themes) do table.insert(themeNames, n) end
             table.sort(themeNames)
             themeDropdown.SetOptions(themeNames)
-            -- jump to new theme in dropdown
             for i,n in ipairs(themeNames) do
                 if n == name then
                     themeDropdown.Set(i)
