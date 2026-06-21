@@ -1,16 +1,14 @@
--- Apple-style UI Library with:
--- - Side tabs (vertical) + auto "Settings" tab
+-- Apple-style UI Library
+-- - Side tabs (vertical) with auto "Settings" tab
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
--- - Theme system (Dark, OLED) + custom themes
--- - Autosave of:
---     * Selected theme & theme colors
---     * All control values (sliders, toggles, textboxes, dropdowns, color pickers)
+-- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
+-- - Autosave of all control values + active theme to APPLE_REC/config.json
 -- - Live recolor of existing sliders & tab buttons when colors/themes change
 -- - Fixed fullscreen button
 
-local UIS = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
-local HttpService = game:GetService("HttpService")
+local UIS        = game:GetService("UserInputService")
+local CoreGui    = game:GetService("CoreGui")
+local HttpService= game:GetService("HttpService")
 
 local UILib = {}
 UILib.__index = UILib
@@ -51,8 +49,7 @@ local CurrentThemeName = "Dark"
 
 local Config = {
     ThemeName = CurrentThemeName,
-    Themes = {},
-    Windows = {},
+    Windows   = {},
 }
 
 local function serializeColor(c)
@@ -69,19 +66,19 @@ end
 local function loadThemes()
     if not fsSupported() then return end
     ensureRoot()
-    if isfile(THEMES_FILE) then
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(readfile(THEMES_FILE))
-        end)
-        if ok and type(data) == "table" then
-            for name, t in pairs(data) do
-                if type(t) == "table" and t.WindowColor and t.ButtonColor and t.SliderColor then
-                    Themes[name] = {
-                        WindowColor = deserializeColor(t.WindowColor, Themes.Dark.WindowColor),
-                        ButtonColor = deserializeColor(t.ButtonColor, Themes.Dark.ButtonColor),
-                        SliderColor = deserializeColor(t.SliderColor, Themes.Dark.SliderColor),
-                    }
-                end
+    if not isfile(THEMES_FILE) then return end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(THEMES_FILE))
+    end)
+    if ok and type(data) == "table" then
+        for name, t in pairs(data) do
+            if type(t) == "table" and t.WindowColor and t.ButtonColor and t.SliderColor then
+                Themes[name] = {
+                    WindowColor = deserializeColor(t.WindowColor, Themes.Dark.WindowColor),
+                    ButtonColor = deserializeColor(t.ButtonColor, Themes.Dark.ButtonColor),
+                    SliderColor = deserializeColor(t.SliderColor, Themes.Dark.SliderColor),
+                }
             end
         end
     end
@@ -109,15 +106,15 @@ end
 local function loadConfig()
     if not fsSupported() then return end
     ensureRoot()
-    if isfile(CONFIG_FILE) then
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(readfile(CONFIG_FILE))
-        end)
-        if ok and type(data) == "table" then
-            Config = data
-            if Config.ThemeName and Themes[Config.ThemeName] then
-                CurrentThemeName = Config.ThemeName
-            end
+    if not isfile(CONFIG_FILE) then return end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(CONFIG_FILE))
+    end)
+    if ok and type(data) == "table" then
+        Config = data
+        if Config.ThemeName and Themes[Config.ThemeName] then
+            CurrentThemeName = Config.ThemeName
         end
     end
 end
@@ -280,7 +277,6 @@ local function openColorWheel(startColor, callback)
         local px = radius + math.cos(angle)*dist
         local py = radius + math.sin(angle)*dist
         wheelPicker.Position = UDim2.new(0,px,0,py)
-
         updatePreview()
     end
 
@@ -371,7 +367,7 @@ function UILib:CreateWindow(id)
         SliderColor = Theme.SliderColor,
     }
 
-    local winCfg = getWindowConfig(id)
+    getWindowConfig(id) -- ensure exists
 
     local frame = Instance.new("Frame")
     frame.Name = "Window"
@@ -434,9 +430,9 @@ function UILib:CreateWindow(id)
     tabsLayout.Parent = tabsPanel
 
     local tabsPad = Instance.new("UIPadding")
-    tabsPad.PaddingTop = UDim2.new(0,6)
-    tabsPad.PaddingLeft = UDim2.new(0,6)
-    tabsPad.PaddingRight = UDim2.new(0,6)
+    tabsPad.PaddingTop = UDim.new(0,6)
+    tabsPad.PaddingLeft = UDim.new(0,6)
+    tabsPad.PaddingRight = UDim.new(0,6)
     tabsPad.Parent = tabsPanel
 
     local content = Instance.new("Frame")
@@ -494,7 +490,7 @@ function UILib:CreateWindow(id)
         end
     end
 
-    -- drag & resize + fullscreen
+    -- drag, resize, fullscreen
     local dragging = false
     local dragStart, startPos
 
@@ -575,7 +571,6 @@ function UILib:CreateWindow(id)
     closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
     minimizeBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible end)
 
-    -- fullscreen toggle
     local isFullscreen = false
     local savedSize = frame.Size
     local savedPos  = frame.Position
@@ -585,8 +580,10 @@ function UILib:CreateWindow(id)
             savedSize = frame.Size
             savedPos  = frame.Position
             local vpSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
-            frame.Size = UDim2.new(0, math.floor(vpSize.X*0.8), 0, math.floor(vpSize.Y*0.8))
-            frame.Position = UDim2.new(0.5,-frame.Size.X.Offset/2,0.5,-frame.Size.Y.Offset/2)
+            local w = math.floor(vpSize.X*0.8)
+            local h = math.floor(vpSize.Y*0.8)
+            frame.Size = UDim2.new(0,w,0,h)
+            frame.Position = UDim2.new(0.5,-w/2,0.5,-h/2)
             isFullscreen = true
         else
             frame.Size = savedSize
@@ -602,7 +599,7 @@ function UILib:CreateWindow(id)
         end
     end)
 
-    --======== SECTION FACTORY (style-aware + autosave) ========
+    --======== SECTION FACTORY ========
 
     local Window = {}
     Window.Frame = frame
@@ -1144,7 +1141,7 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- Settings tab content
+        -- Settings tab
         local settingsSection = tabs[1].Section
         settingsSection:AddLabel("Theme")
 
@@ -1230,7 +1227,7 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- default to Settings tab
+        -- default Settings tab
         selectTab(1)
 
         return {
