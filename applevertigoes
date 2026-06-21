@@ -1,13 +1,8 @@
 -- Apple-style UI Library
--- - Side tabs (vertical) with auto "Settings" tab (created after your tabs)
+-- - Side tabs (vertical) with Settings added AFTER your tabs
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
--- - Live recolor of sliders, buttons, tab buttons when colors/themes change
--- - Dropdowns support SetOptions/Rebuild
--- - Sliders have a text input that controls the slider
--- - Fixed fullscreen button
--- - GetTab(1..n) maps to your tabs; Settings is separate via GetSettings()
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -513,7 +508,8 @@ function UILib:CreateWindow(id)
         end
     end
 
-    -- drag, resize, fullscreen
+    -- drag, resize, fullscreen (unchanged from your version)...
+
     local dragging = false
     local dragStart, startPos
 
@@ -1133,13 +1129,12 @@ function UILib:CreateWindow(id)
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
     function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS, SETTINGS ADDED AFTER USER TABS =========
+    --========= SIDE TABS, SETTINGS ADDED BY LOCAL FUNCTION =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
         defaultIndex = defaultIndex or 1
 
-        local userTabNames = tabNames
         local tabs = {}
         local settingsTab = nil
 
@@ -1150,7 +1145,7 @@ function UILib:CreateWindow(id)
         pagesHolder.Parent = content
 
         -- 1) Create user tabs first
-        for i, name in ipairs(userTabNames) do
+        for i, name in ipairs(tabNames) do
             local btn = Instance.new("TextButton")
             btn.Name = "TabButton_"..name
             btn.Size = UDim2.new(1,0,0,26)
@@ -1200,8 +1195,8 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- 2) Add Settings tab at the end
-        do
+        -- local function to add Settings after all user tabs
+        local function addSettingsTab()
             local name = "Settings"
             local idx = #tabs + 1
 
@@ -1253,22 +1248,20 @@ function UILib:CreateWindow(id)
                 Button = btn,
                 Stroke = stroke,
             }
-        end
 
-        -- 3) Populate Settings AFTER all tabs exist
-        if settingsTab then
+            -- build Settings UI
             local settingsSection = settingsTab.Section
 
             settingsSection:AddLabel("Theme")
 
             local themeNames = {}
-            for name,_ in pairs(Themes) do table.insert(themeNames, name) end
+            for n,_ in pairs(Themes) do table.insert(themeNames, n) end
             table.sort(themeNames)
             if not Themes[CurrentThemeName] then CurrentThemeName = "Dark" end
 
             local currentThemeIdx = 1
-            for i,name in ipairs(themeNames) do
-                if name == CurrentThemeName then currentThemeIdx = i break end
+            for i,n in ipairs(themeNames) do
+                if n == CurrentThemeName then currentThemeIdx = i break end
             end
 
             local themeDropdown = settingsSection:AddDropdown("Theme", themeNames, currentThemeIdx, function(val)
@@ -1338,7 +1331,10 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- 4) Selection logic
+        -- call local function to add Settings after user tabs
+        addSettingsTab()
+
+        -- selection logic
         local function selectTab(internalIdx)
             currentTabIndex = internalIdx
             refreshTabButtons()
@@ -1353,7 +1349,7 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- 5) Start on your default user tab
+        -- start on requested user tab
         if tabs[defaultIndex] then
             selectTab(defaultIndex)
         else
@@ -1361,7 +1357,7 @@ function UILib:CreateWindow(id)
         end
 
         return {
-            -- user tabs 1..#userTabNames
+            -- 1..#tabNames = your tabs
             Select = function(idx)
                 idx = tonumber(idx)
                 if idx and tabs[idx] then
