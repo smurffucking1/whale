@@ -1,7 +1,7 @@
 -- // Apple-style UI Library with expanding dropdowns + color wheel picker + themes
 -- // + sliders + textboxes + buttons + tabs + toggles + config saving
+-- // + left vertical theme bar (secondary window) for window & tab colors
 -- // Requires executor fs (isfolder, makefolder, isfile, readfile, writefile)
--- // Themes + all control states (sliders, dropdowns, textboxes, color, toggles) persist per-config
 
 local UIS = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -11,12 +11,12 @@ local UILib = {}
 UILib.__index = UILib
 UILib.Windows = {}
 
---============= FS + THEMES =============
+--============= FS + THEMES + CONFIG =============
 
-local ROOT_FOLDER   = "APPLE_REC"
-local THEMES_FILE   = ROOT_FOLDER .. "/themes.json"
-local CONFIGS_FOLDER = ROOT_FOLDER .. "/configs"
-local CURRENT_CONFIG = "default"
+local ROOT_FOLDER     = "APPLE_REC"
+local THEMES_FILE     = ROOT_FOLDER .. "/themes.json"
+local CONFIGS_FOLDER  = ROOT_FOLDER .. "/configs"
+local CURRENT_CONFIG  = "default"
 
 local function fsSupported()
     return isfolder and makefolder and isfile and readfile and writefile
@@ -34,11 +34,13 @@ end
 
 local Themes = {
     Default = {
-        WindowColor = Color3.fromRGB(25, 25, 32),
-        StripColor  = Color3.fromRGB(40, 40, 50),
-        DotColorRed = Color3.fromRGB(255, 95, 86),
-        DotColorYellow = Color3.fromRGB(255, 189, 46),
-        DotColorGreen = Color3.fromRGB(39, 201, 63),
+        WindowColor      = Color3.fromRGB(25, 25, 32),
+        StripColor       = Color3.fromRGB(40, 40, 50),
+        DotColorRed      = Color3.fromRGB(255, 95, 86),
+        DotColorYellow   = Color3.fromRGB(255, 189, 46),
+        DotColorGreen    = Color3.fromRGB(39, 201, 63),
+        TabIdleColor     = Color3.fromRGB(40, 40, 50),
+        TabSelectedColor = Color3.fromRGB(39, 201, 63),
     }
 }
 
@@ -54,11 +56,13 @@ local function loadThemes()
         for name, t in pairs(decoded) do
             if type(t) == "table" and t.WindowColor and t.StripColor then
                 Themes[name] = {
-                    WindowColor = Color3.new(t.WindowColor.R,t.WindowColor.G,t.WindowColor.B),
-                    StripColor  = Color3.new(t.StripColor.R, t.StripColor.G, t.StripColor.B),
-                    DotColorRed = Color3.new(t.DotColorRed.R,t.DotColorRed.G,t.DotColorRed.B),
-                    DotColorYellow = Color3.new(t.DotColorYellow.R,t.DotColorYellow.G,t.DotColorYellow.B),
-                    DotColorGreen  = Color3.new(t.DotColorGreen.R, t.DotColorGreen.G, t.DotColorGreen.B),
+                    WindowColor      = Color3.new(t.WindowColor.R, t.WindowColor.G, t.WindowColor.B),
+                    StripColor       = Color3.new(t.StripColor.R, t.StripColor.G, t.StripColor.B),
+                    DotColorRed      = Color3.new(t.DotColorRed.R, t.DotColorRed.G, t.DotColorRed.B),
+                    DotColorYellow   = Color3.new(t.DotColorYellow.R, t.DotColorYellow.G, t.DotColorYellow.B),
+                    DotColorGreen    = Color3.new(t.DotColorGreen.R, t.DotColorGreen.G, t.DotColorGreen.B),
+                    TabIdleColor     = t.TabIdleColor and Color3.new(t.TabIdleColor.R, t.TabIdleColor.G, t.TabIdleColor.B) or Color3.fromRGB(40, 40, 50),
+                    TabSelectedColor = t.TabSelectedColor and Color3.new(t.TabSelectedColor.R, t.TabSelectedColor.G, t.TabSelectedColor.B) or Color3.fromRGB(39, 201, 63),
                 }
             end
         end
@@ -72,11 +76,13 @@ local function saveThemes()
     local serial = {}
     for name,t in pairs(Themes) do
         serial[name] = {
-            WindowColor = {R=t.WindowColor.R,G=t.WindowColor.G,B=t.WindowColor.B},
-            StripColor  = {R=t.StripColor.R, G=t.StripColor.G, B=t.StripColor.B},
-            DotColorRed = {R=t.DotColorRed.R,G=t.DotColorRed.G,B=t.DotColorRed.B},
-            DotColorYellow = {R=t.DotColorYellow.R,G=t.DotColorYellow.G,B=t.DotColorYellow.B},
-            DotColorGreen  = {R=t.DotColorGreen.R, G=t.DotColorGreen.G, B=t.DotColorGreen.B},
+            WindowColor      = {R=t.WindowColor.R,      G=t.WindowColor.G,      B=t.WindowColor.B},
+            StripColor       = {R=t.StripColor.R,       G=t.StripColor.G,       B=t.StripColor.B},
+            DotColorRed      = {R=t.DotColorRed.R,      G=t.DotColorRed.G,      B=t.DotColorRed.B},
+            DotColorYellow   = {R=t.DotColorYellow.R,   G=t.DotColorYellow.G,   B=t.DotColorYellow.B},
+            DotColorGreen    = {R=t.DotColorGreen.R,    G=t.DotColorGreen.G,    B=t.DotColorGreen.B},
+            TabIdleColor     = {R=t.TabIdleColor.R,     G=t.TabIdleColor.G,     B=t.TabIdleColor.B},
+            TabSelectedColor = {R=t.TabSelectedColor.R, G=t.TabSelectedColor.G, B=t.TabSelectedColor.B},
         }
     end
 
@@ -90,8 +96,7 @@ end
 
 loadThemes()
 
---============= CONFIG SYSTEM =============
-
+-- Config data (sliders, dropdowns, etc.)
 local ConfigData = { Windows = {} }
 
 local function loadConfig()
@@ -143,6 +148,13 @@ local function getControlValue(windowId, key, expectedType)
 end
 
 loadConfig()
+
+function UILib:SetConfigName(name)
+    if type(name) == "string" and name ~= "" then
+        CURRENT_CONFIG = name
+        loadConfig()
+    end
+end
 
 --============= COLOR WHEEL PICKER =============
 
@@ -323,18 +335,13 @@ local function openColorWheel(startColor, callback)
     end)
 end
 
---============= WINDOW CREATION =============
+--============= UTILS =============
 
 local function clampNum(v, mn, mx)
     return (v < mn and mn) or (v > mx and mx) or v
 end
 
-function UILib:SetConfigName(name)
-    if type(name) == "string" and name ~= "" then
-        CURRENT_CONFIG = name
-        loadConfig()
-    end
-end
+--============= MAIN WINDOW CREATION =============
 
 function UILib:CreateWindow(id)
     id = id or ("Window_"..tostring(#self.Windows+1))
@@ -360,6 +367,7 @@ function UILib:CreateWindow(id)
     frame.BackgroundColor3 = CurrentTheme.WindowColor
     frame.BorderSizePixel = 0
     frame.Active = true
+    frame.ClipsDescendants = true
     frame.Parent = gui
     local fC = Instance.new("UICorner", frame); fC.CornerRadius = UDim.new(0,12)
 
@@ -393,6 +401,7 @@ function UILib:CreateWindow(id)
     content.BackgroundTransparency = 1
     content.Size = UDim2.new(1,-24,1,-40)
     content.Position = UDim2.new(0,12,0,32)
+    content.ClipsDescendants = true
     content.Parent = frame
 
     local layout = Instance.new("UIListLayout")
@@ -405,13 +414,40 @@ function UILib:CreateWindow(id)
         local r = Instance.new("Frame")
         r.Size = UDim2.new(1,0,0,h or 28)
         r.BackgroundTransparency = 1
+        r.ClipsDescendants = true
         r.Parent = p
+        return r
+    end
+
+    -- Secondary ThemeBar (left side)
+    local themeBarOffset = 8
+    local themeBar = Instance.new("Frame")
+    themeBar.Name = "ThemeBar"
+    themeBar.Size = UDim2.new(0, 140, 0, 220)
+    themeBar.Position = frame.Position + UDim2.new(0, -140 - themeBarOffset, 0, 20)
+    themeBar.BackgroundColor3 = Color3.fromRGB(20,20,28)
+    themeBar.BorderSizePixel = 0
+    themeBar.ClipsDescendants = true
+    themeBar.Parent = gui
+    local tbCorner = Instance.new("UICorner", themeBar); tbCorner.CornerRadius = UDim.new(0,12)
+
+    local themeBarLayout = Instance.new("UIListLayout")
+    themeBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    themeBarLayout.Padding = UDim.new(0,4)
+    themeBarLayout.Parent = themeBar
+
+    local function themeBarRow(h)
+        local r = Instance.new("Frame")
+        r.Size = UDim2.new(1, -10, 0, h or 28)
+        r.BackgroundTransparency = 1
+        r.Parent = themeBar
         return r
     end
 
     -- Drag
     local dragging = false
     local dragStart, startPos
+
     local function pointIn(inst,pos)
         local p = inst.AbsolutePosition
         local s = inst.AbsoluteSize
@@ -439,7 +475,10 @@ function UILib:CreateWindow(id)
         if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
         if dragging then
             local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+            local newPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            frame.Position = newPos
+            -- move theme bar along (secondary window)
+            themeBar.Position = newPos + UDim2.new(0, -themeBar.AbsoluteSize.X - themeBarOffset, 0, 20)
         end
     end)
 
@@ -488,8 +527,13 @@ function UILib:CreateWindow(id)
     end)
 
     -- Close/minimize/fullscreen
-    closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
-    minimizeBtn.MouseButton1Click:Connect(function() frame.Visible=false end)
+    closeBtn.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+    minimizeBtn.MouseButton1Click:Connect(function()
+        frame.Visible = not frame.Visible
+        themeBar.Visible = frame.Visible
+    end)
 
     local savedSize, savedPos, fullscreen = frame.Size, frame.Position, false
     fullscreenBtn.MouseButton1Click:Connect(function()
@@ -507,7 +551,9 @@ function UILib:CreateWindow(id)
     UIS.InputBegan:Connect(function(input,gp)
         if gp then return end
         if input.KeyCode == Enum.KeyCode.RightControl then
-            frame.Visible = not frame.Visible
+            local vis = not frame.Visible
+            frame.Visible = vis
+            themeBar.Visible = vis
         end
     end)
 
@@ -517,6 +563,8 @@ function UILib:CreateWindow(id)
     Window.Frame = frame
     Window.Content = content
     Window.Id = id
+    Window.ThemeBar = themeBar
+    Window.Theme = CurrentTheme
 
     local function controlKey(kind, labelText, extra)
         local base = (labelText or kind):gsub("%s+","_")
@@ -536,12 +584,12 @@ function UILib:CreateWindow(id)
         return getControlValue(self.Id, key, kind)
     end
 
-    -- Section API factory (for Window or Tab pages)
-    local function makeSection(parentFrame, sectionIdExtra)
+    -- Section API factory
+    local function makeSection(parentFrame, sectionExtra)
         local Section = {}
         Section.Window = Window
         Section.Parent = parentFrame
-        Section.SectionExtra = sectionIdExtra
+        Section.SectionExtra = sectionExtra
 
         local function newSectionRow(h)
             return newRow(h, Section.Parent)
@@ -679,7 +727,7 @@ function UILib:CreateWindow(id)
 
             local lbl = Instance.new("TextLabel")
             lbl.BackgroundTransparency = 1
-            lbl.Size = UDim2.new(0.35,-4,1,0)
+            lbl.Size = UDim2.new(0.5,-4,1,0)
             lbl.Position = UDim2.new(0,0,0,0)
             lbl.Font = Enum.Font.Gotham
             lbl.TextSize = 14
@@ -690,7 +738,7 @@ function UILib:CreateWindow(id)
 
             local preview = Instance.new("Frame")
             preview.Size = UDim2.new(0,24,0,24)
-            preview.Position = UDim2.new(0.35,0,0,2)
+            preview.Position = UDim2.new(0.5,0,0,2)
             preview.BackgroundColor3 = startColor
             preview.BorderSizePixel = 0
             preview.Parent = row
@@ -699,13 +747,13 @@ function UILib:CreateWindow(id)
             local btn = Instance.new("TextButton")
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
-            btn.Size = UDim2.new(0,80,1,0)
+            btn.Size = UDim2.new(0,70,1,0)
             btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
             btn.TextColor3 = Color3.fromRGB(230,230,240)
-            btn.Text = "Pick color"
+            btn.Text = "Pick"
             btn.Parent = row
             local bc2 = Instance.new("UICorner", btn); bc2.CornerRadius = UDim.new(0,4)
 
@@ -745,7 +793,7 @@ function UILib:CreateWindow(id)
         function Section:AddSlider(labelText, minVal, maxVal, defaultVal, step, callback)
             minVal = minVal or 0
             maxVal = maxVal or 100
-            step = step or 1
+            step   = step or 1
 
             local saved = Window:GetConfigValue("Slider", labelText, Section.SectionExtra)
             if typeof(saved) == "number" then
@@ -755,7 +803,7 @@ function UILib:CreateWindow(id)
             end
 
             local row = newSectionRow(36)
-            
+
             local lbl = Instance.new("TextLabel")
             lbl.BackgroundTransparency = 1
             lbl.Size = UDim2.new(0.35,-4,0,16)
@@ -824,10 +872,10 @@ function UILib:CreateWindow(id)
 
             updateSlider(defaultVal)
 
-            local dragging = false
+            local draggingSlider = false
             sliderBg.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    dragging = true
+                    draggingSlider = true
                     local mp = UIS:GetMouseLocation()
                     local bgPos = sliderBg.AbsolutePosition
                     local bgSize = sliderBg.AbsoluteSize
@@ -836,7 +884,7 @@ function UILib:CreateWindow(id)
                     updateSlider(minVal + pct * (maxVal - minVal))
                     input.Changed:Connect(function()
                         if input.UserInputState == Enum.UserInputState.End then
-                            dragging = false
+                            draggingSlider = false
                         end
                     end)
                 end
@@ -844,7 +892,7 @@ function UILib:CreateWindow(id)
 
             UIS.InputChanged:Connect(function(input)
                 if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-                if dragging then
+                if draggingSlider then
                     local mp = UIS:GetMouseLocation()
                     local bgPos = sliderBg.AbsolutePosition
                     local bgSize = sliderBg.AbsoluteSize
@@ -1016,203 +1064,200 @@ function UILib:CreateWindow(id)
 
     local WindowSection = makeSection(content, nil)
 
-    function Window:AddDropdown(...) return WindowSection:AddDropdown(...) end
+    function Window:AddDropdown(...)    return WindowSection:AddDropdown(...) end
     function Window:AddColorPicker(...) return WindowSection:AddColorPicker(...) end
-    function Window:AddSlider(...) return WindowSection:AddSlider(...) end
-    function Window:AddTextBox(...) return WindowSection:AddTextBox(...) end
-    function Window:AddButton(...) return WindowSection:AddButton(...) end
-    function Window:AddToggle(...) return WindowSection:AddToggle(...) end
-    function Window:AddLabel(...) return WindowSection:AddLabel(...) end
+    function Window:AddSlider(...)      return WindowSection:AddSlider(...) end
+    function Window:AddTextBox(...)     return WindowSection:AddTextBox(...) end
+    function Window:AddButton(...)      return WindowSection:AddButton(...) end
+    function Window:AddToggle(...)      return WindowSection:AddToggle(...) end
+    function Window:AddLabel(...)       return WindowSection:AddLabel(...) end
 
     -- Tabs
-function Window:AddTabs(tabNames, defaultIndex)
-    tabNames = tabNames or {"Tab 1"}
-    defaultIndex = defaultIndex or 1
+    function Window:AddTabs(tabNames, defaultIndex)
+        tabNames = tabNames or {"Tab 1"}
+        defaultIndex = defaultIndex or 1
 
-    -- one row that holds both the tab bar (top) and the content area (fills remaining)
-    local tabRow = newRow(220)  -- adjust height if you want more/less space
+        local tabRow = newRow(220)
+        tabRow.Name = "TabsRow"
+        tabRow.ClipsDescendants = true
 
-    -- Tab bar at the top of that row
-    local tabBar = Instance.new("Frame")
-    tabBar.Name = "TabBar"
-    tabBar.BackgroundTransparency = 1
-    tabBar.Size = UDim2.new(1, -4, 0, 24) -- 24px tall header
-    tabBar.Position = UDim2.new(0, 2, 0, 0)
-    tabBar.Parent = tabRow
+        local tabBar = Instance.new("Frame")
+        tabBar.Name = "TabBar"
+        tabBar.BackgroundTransparency = 1
+        tabBar.Size = UDim2.new(1, -4, 0, 26)
+        tabBar.Position = UDim2.new(0, 2, 0, 0)
+        tabBar.Parent = tabRow
 
-    local tabLayout = Instance.new("UIListLayout")
-    tabLayout.FillDirection = Enum.FillDirection.Horizontal
-    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabLayout.Padding = UDim.new(0, 4)
-    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    tabLayout.Parent = tabBar
+        local tabLayout = Instance.new("UIListLayout")
+        tabLayout.FillDirection = Enum.FillDirection.Horizontal
+        tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tabLayout.Padding = UDim.new(0, 4)
+        tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        tabLayout.Parent = tabBar
 
-    -- Content area fills the rest of the row under the header
-    local tabContentArea = Instance.new("Frame")
-    tabContentArea.Name = "TabContent"
-    tabContentArea.BackgroundTransparency = 1
-    tabContentArea.Size = UDim2.new(1, -4, 1, -28) -- 28 = header height + small padding
-    tabContentArea.Position = UDim2.new(0, 2, 0, 28)
-    tabContentArea.Parent = tabRow
+        local tabContentArea = Instance.new("Frame")
+        tabContentArea.Name = "TabContent"
+        tabContentArea.BackgroundTransparency = 1
+        tabContentArea.Size = UDim2.new(1, -4, 1, -30)
+        tabContentArea.Position = UDim2.new(0, 2, 0, 30)
+        tabContentArea.ClipsDescendants = true
+        tabContentArea.Parent = tabRow
 
-    local tabs = {}
-    local currentTab = nil
-    local tabSections = {}
+        local tabs = {}
+        local currentTab = nil
+        local tabSections = {}
 
-    local function createTab(name, idx)
-        local tabBtn = Instance.new("TextButton")
-        tabBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-        tabBtn.BorderSizePixel = 0
-        tabBtn.Font = Enum.Font.Gotham
-        tabBtn.TextSize = 13
-        tabBtn.TextColor3 = Color3.fromRGB(230,230,240)
-        tabBtn.TextXAlignment = Enum.TextXAlignment.Center
-        tabBtn.Text = name
-        tabBtn.AutomaticSize = Enum.AutomaticSize.X
-        tabBtn.Size = UDim2.new(0, 0, 1, 0)
-        tabBtn.Parent = tabBar
+        local function createTab(name, idx)
+            local tabBtn = Instance.new("TextButton")
+            tabBtn.Name = "TabButton_" .. tostring(name)
+            tabBtn.BackgroundColor3 = CurrentTheme.TabIdleColor
+            tabBtn.BorderSizePixel = 0
+            tabBtn.Font = Enum.Font.Gotham
+            tabBtn.TextSize = 13
+            tabBtn.TextColor3 = Color3.fromRGB(230,230,240)
+            tabBtn.TextXAlignment = Enum.TextXAlignment.Center
+            tabBtn.Text = name
+            tabBtn.AutomaticSize = Enum.AutomaticSize.X
+            tabBtn.Size = UDim2.new(0, 0, 1, 0)
+            tabBtn.Parent = tabBar
 
-        local btnCorner = Instance.new("UICorner", tabBtn)
-        btnCorner.CornerRadius = UDim.new(0, 4)
+            local btnCorner = Instance.new("UICorner", tabBtn)
+            btnCorner.CornerRadius = UDim.new(0, 4)
 
-        local tabPage = Instance.new("Frame")
-        tabPage.Name = "Page_" .. tostring(name)
-        tabPage.BackgroundTransparency = 1
-        tabPage.Size = UDim2.new(1, 0, 1, 0)
-        tabPage.Position = UDim2.new(0, 0, 0, 0)
-        tabPage.Visible = false
-        tabPage.Parent = tabContentArea
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = Color3.fromRGB(255,255,255)
+            stroke.Thickness = 1
+            stroke.Transparency = 0.7
+            stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            stroke.Parent = tabBtn
 
-        local tabPageLayout = Instance.new("UIListLayout")
-        tabPageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        tabPageLayout.Padding = UDim.new(0, 6)
-        tabPageLayout.Parent = tabPage
+            local tabPage = Instance.new("Frame")
+            tabPage.Name = "Page_" .. tostring(name)
+            tabPage.BackgroundTransparency = 1
+            tabPage.Size = UDim2.new(1, 0, 1, 0)
+            tabPage.Position = UDim2.new(0, 0, 0, 0)
+            tabPage.Visible = false
+            tabPage.ClipsDescendants = true
+            tabPage.Parent = tabContentArea
 
-        local section = makeSection(tabPage, name)
+            local tabPageLayout = Instance.new("UIListLayout")
+            tabPageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            tabPageLayout.Padding = UDim.new(0, 6)
+            tabPageLayout.Parent = tabPage
 
-        tabs[idx] = {
-            Button = tabBtn,
-            Page = tabPage,
-            Name = name,
-            Section = section,
-        }
-        tabSections[idx] = section
+            local section = makeSection(tabPage, name)
 
-        tabBtn.MouseButton1Click:Connect(function()
-            if currentTab then
-                currentTab.Page.Visible = false
-            end
-            currentTab = tabs[idx]
-            currentTab.Page.Visible = true
+            tabs[idx] = {
+                Button  = tabBtn,
+                Page    = tabPage,
+                Name    = name,
+                Section = section,
+                Stroke  = stroke,
+            }
+            tabSections[idx] = section
 
-            -- Update button visuals
-            for i, t in ipairs(tabs) do
-                if i == idx then
-                    t.Button.BackgroundColor3 = CurrentTheme.DotColorGreen
-                    t.Button.Font = Enum.Font.GothamBold
+            local function setSelected(selected)
+                if selected then
+                    tabBtn.BackgroundColor3 = CurrentTheme.TabSelectedColor
+                    tabBtn.Font = Enum.Font.GothamBold
+                    tabBtn.TextColor3 = Color3.fromRGB(15,15,20)
+                    stroke.Transparency = 0.1
+                    tabPage.Visible = true
                 else
-                    t.Button.BackgroundColor3 = Color3.fromRGB(40,40,50)
-                    t.Button.Font = Enum.Font.Gotham
+                    tabBtn.BackgroundColor3 = CurrentTheme.TabIdleColor
+                    tabBtn.Font = Enum.Font.Gotham
+                    tabBtn.TextColor3 = Color3.fromRGB(230,230,240)
+                    stroke.Transparency = 0.7
+                    tabPage.Visible = false
                 end
             end
-        end)
 
-        return section
+            tabBtn.MouseButton1Click:Connect(function()
+                currentTab = tabs[idx]
+                for i, t in ipairs(tabs) do
+                    setSelected(i == idx)
+                end
+            end)
+
+            return section
+        end
+
+        for i, name in ipairs(tabNames) do
+            createTab(name, i)
+        end
+
+        if tabs[defaultIndex] then
+            tabs[defaultIndex].Button:MouseButton1Click()
+        end
+
+        return {
+            Select = function(idx)
+                if tabs[idx] then
+                    tabs[idx].Button:MouseButton1Click()
+                end
+            end,
+            GetSelected = function() return currentTab end,
+            GetTab = function(idx) return tabSections[idx] end,
+        }
     end
 
-    for i, name in ipairs(tabNames) do
-        createTab(name, i)
-    end
-
-    -- select default tab
-    if tabs[defaultIndex] then
-        tabs[defaultIndex].Button:MouseButton1Click()
-    end
-
-    return {
-        Select = function(idx)
-            if tabs[idx] then
-                tabs[idx].Button:MouseButton1Click()
-            end
-        end,
-        GetSelected = function() return currentTab end,
-        GetTab = function(idx) return tabSections[idx] end,
-    }
-end
-
-    -- Built-in theme controls
+    -- ThemeBar color controls (window + tab colors)
     do
-        Window:AddLabel("Theme")
+        local r = themeBarRow(20)
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1,0,1,0)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 14
+        label.TextColor3 = Color3.fromRGB(230,230,240)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Text = "Theme"
+        label.Parent = r
 
-        local themeNames = {}
-        for name,_ in pairs(Themes) do table.insert(themeNames,name) end
-        table.sort(themeNames)
+        local function makeMiniColor(labelText, getter, setter)
+            local row = themeBarRow(28)
 
-        Window:AddDropdown("Theme", themeNames, 1, function(name)
-            local t = Themes[name]
-            if not t then return end
-            CurrentThemeName = name
-            CurrentTheme = t
-            frame.BackgroundColor3 = t.WindowColor
-            topStrip.BackgroundColor3 = t.StripColor
-            closeBtn.BackgroundColor3 = t.DotColorRed
-            minimizeBtn.BackgroundColor3 = t.DotColorYellow
-            fullscreenBtn.BackgroundColor3 = t.DotColorGreen
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(0.6,0,1,0)
+            lbl.BackgroundTransparency = 1
+            lbl.Font = Enum.Font.Gotham
+            lbl.TextSize = 13
+            lbl.TextColor3 = Color3.fromRGB(230,230,240)
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Text = labelText
+            lbl.Parent = row
+
+            local preview = Instance.new("Frame")
+            preview.Size = UDim2.new(0,24,0,24)
+            preview.Position = UDim2.new(0.6,0,0,2)
+            preview.BackgroundColor3 = getter()
+            preview.BorderSizePixel = 0
+            preview.Parent = row
+            local pc = Instance.new("UICorner", preview); pc.CornerRadius = UDim.new(0,6)
+
+            preview.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    local startCol = getter()
+                    openColorWheel(startCol, function(col)
+                        preview.BackgroundColor3 = col
+                        setter(col)
+                    end)
+                end
+            end)
+        end
+
+        makeMiniColor("Window", function() return CurrentTheme.WindowColor end, function(col)
+            CurrentTheme.WindowColor = col
+            frame.BackgroundColor3 = col
         end)
 
-        local saveRow = newRow(28)
+        makeMiniColor("Tab idle", function() return CurrentTheme.TabIdleColor end, function(col)
+            CurrentTheme.TabIdleColor = col
+        end)
 
-        local sl = Instance.new("TextLabel")
-        sl.BackgroundTransparency = 1
-        sl.Size = UDim2.new(0.35,-4,1,0)
-        sl.Position = UDim2.new(0,0,0,0)
-        sl.Font = Enum.Font.Gotham
-        sl.TextSize = 14
-        sl.TextColor3 = Color3.fromRGB(230,230,240)
-        sl.TextXAlignment = Enum.TextXAlignment.Left
-        sl.Text = "Save theme as"
-        sl.Parent = saveRow
-
-        local nameBox = Instance.new("TextBox")
-        nameBox.AnchorPoint = Vector2.new(1,0)
-        nameBox.Position = UDim2.new(1,-70,0,0)
-        nameBox.Size = UDim2.new(0.35,0,1,0)
-        nameBox.BackgroundColor3 = Color3.fromRGB(40,40,50)
-        nameBox.BorderSizePixel = 0
-        nameBox.Font = Enum.Font.Gotham
-        nameBox.TextSize = 14
-        nameBox.TextColor3 = Color3.fromRGB(240,240,250)
-        nameBox.ClearTextOnFocus = false
-        nameBox.TextXAlignment = Enum.TextXAlignment.Left
-        nameBox.Text = "MyTheme"
-        nameBox.Parent = saveRow
-        local nbC = Instance.new("UICorner", nameBox); nbC.CornerRadius = UDim.new(0,4)
-
-        local saveBtn = Instance.new("TextButton")
-        saveBtn.AnchorPoint = Vector2.new(1,0)
-        saveBtn.Position = UDim2.new(1,0,0,0)
-        saveBtn.Size = UDim2.new(0,70,1,0)
-        saveBtn.BackgroundColor3 = Color3.fromRGB(60,60,80)
-        saveBtn.BorderSizePixel = 0
-        saveBtn.Font = Enum.Font.GothamBold
-        saveBtn.TextSize = 14
-        saveBtn.TextColor3 = Color3.fromRGB(230,230,240)
-        saveBtn.Text = "Save"
-        saveBtn.Parent = saveRow
-        local sbC = Instance.new("UICorner", saveBtn); sbC.CornerRadius = UDim.new(0,4)
-
-        saveBtn.MouseButton1Click:Connect(function()
-            local name = nameBox.Text:gsub("^%s+",""):gsub("%s+$","")
-            if name == "" then return end
-            Themes[name] = {
-                WindowColor = frame.BackgroundColor3,
-                StripColor  = topStrip.BackgroundColor3,
-                DotColorRed = closeBtn.BackgroundColor3,
-                DotColorYellow = minimizeBtn.BackgroundColor3,
-                DotColorGreen  = fullscreenBtn.BackgroundColor3,
-            }
-            saveThemes()
+        makeMiniColor("Tab selected", function() return CurrentTheme.TabSelectedColor end, function(col)
+            CurrentTheme.TabSelectedColor = col
         end)
     end
 
