@@ -1025,109 +1025,121 @@ function UILib:CreateWindow(id)
     function Window:AddLabel(...) return WindowSection:AddLabel(...) end
 
     -- Tabs
-    function Window:AddTabs(tabNames, defaultIndex)
-        tabNames = tabNames or {"Tab 1"}
-        defaultIndex = defaultIndex or 1
+function Window:AddTabs(tabNames, defaultIndex)
+    tabNames = tabNames or {"Tab 1"}
+    defaultIndex = defaultIndex or 1
 
-        local tabRow = newRow(60)
-        
-        local tabBar = Instance.new("Frame")
-        tabBar.Size = UDim2.new(1,-4,0,28)
-        tabBar.BackgroundTransparency = 1
-        tabBar.Parent = tabRow
+    -- one row that holds both the tab bar (top) and the content area (fills remaining)
+    local tabRow = newRow(220)  -- adjust height if you want more/less space
 
-        local tabLayout = Instance.new("UIListLayout")
-        tabLayout.FillDirection = Enum.FillDirection.Horizontal
-        tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        tabLayout.Padding = UDim.new(0,4)
-        tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-        tabLayout.Parent = tabBar
+    -- Tab bar at the top of that row
+    local tabBar = Instance.new("Frame")
+    tabBar.Name = "TabBar"
+    tabBar.BackgroundTransparency = 1
+    tabBar.Size = UDim2.new(1, -4, 0, 24) -- 24px tall header
+    tabBar.Position = UDim2.new(0, 2, 0, 0)
+    tabBar.Parent = tabRow
 
-        local tabContentArea = Instance.new("Frame")
-        tabContentArea.Size = UDim2.new(1,-4,1,-32)
-        tabContentArea.Position = UDim2.new(0,0,0,32)
-        tabContentArea.BackgroundTransparency = 1
-        tabContentArea.Parent = tabRow
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabLayout.Padding = UDim.new(0, 4)
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    tabLayout.Parent = tabBar
 
-        local tabs = {}
-        local currentTab = nil
+    -- Content area fills the rest of the row under the header
+    local tabContentArea = Instance.new("Frame")
+    tabContentArea.Name = "TabContent"
+    tabContentArea.BackgroundTransparency = 1
+    tabContentArea.Size = UDim2.new(1, -4, 1, -28) -- 28 = header height + small padding
+    tabContentArea.Position = UDim2.new(0, 2, 0, 28)
+    tabContentArea.Parent = tabRow
 
-        local function createTab(name, idx)
-            local tabBtn = Instance.new("TextButton")
-            tabBtn.Size = UDim2.new(0,0,1,0)
-            tabBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-            tabBtn.BorderSizePixel = 0
-            tabBtn.Font = Enum.Font.Gotham
-            tabBtn.TextSize = 13
-            tabBtn.TextColor3 = Color3.fromRGB(230,230,240)
-            tabBtn.Text = name
-            tabBtn.Parent = tabBar
+    local tabs = {}
+    local currentTab = nil
+    local tabSections = {}
 
-            tabBtn:GetPropertyChangedSignal("Text"):Connect(function()
-                tabBtn.Size = UDim2.new(0, tabBtn.TextBounds.X + 16,1,0)
-            end)
-            tabBtn.Text = name
+    local function createTab(name, idx)
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+        tabBtn.BorderSizePixel = 0
+        tabBtn.Font = Enum.Font.Gotham
+        tabBtn.TextSize = 13
+        tabBtn.TextColor3 = Color3.fromRGB(230,230,240)
+        tabBtn.TextXAlignment = Enum.TextXAlignment.Center
+        tabBtn.Text = name
+        tabBtn.AutomaticSize = Enum.AutomaticSize.X
+        tabBtn.Size = UDim2.new(0, 0, 1, 0)
+        tabBtn.Parent = tabBar
 
-            local tabPage = Instance.new("Frame")
-            tabPage.Size = UDim2.new(1,0,1,0)
-            tabPage.BackgroundTransparency = 1
-            tabPage.Visible = false
-            tabPage.Parent = tabContentArea
+        local btnCorner = Instance.new("UICorner", tabBtn)
+        btnCorner.CornerRadius = UDim.new(0, 4)
 
-            local tabPageLayout = Instance.new("UIListLayout")
-            tabPageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            tabPageLayout.Padding = UDim.new(0,6)
-            tabPageLayout.Parent = tabPage
+        local tabPage = Instance.new("Frame")
+        tabPage.Name = "Page_" .. tostring(name)
+        tabPage.BackgroundTransparency = 1
+        tabPage.Size = UDim2.new(1, 0, 1, 0)
+        tabPage.Position = UDim2.new(0, 0, 0, 0)
+        tabPage.Visible = false
+        tabPage.Parent = tabContentArea
 
-            local section = makeSection(tabPage, name)
+        local tabPageLayout = Instance.new("UIListLayout")
+        tabPageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tabPageLayout.Padding = UDim.new(0, 6)
+        tabPageLayout.Parent = tabPage
 
-            tabs[idx] = {
-                Button = tabBtn,
-                Page = tabPage,
-                Name = name,
-                Section = section,
-            }
+        local section = makeSection(tabPage, name)
 
-            tabBtn.MouseButton1Click:Connect(function()
-                if currentTab then
-                    currentTab.Page.Visible = false
-                end
-                tabs[idx].Page.Visible = true
-                currentTab = tabs[idx]
-
-                for i,tab in ipairs(tabs) do
-                    if i == idx then
-                        tab.Button.BackgroundColor3 = CurrentTheme.DotColorGreen
-                        tab.Button.Font = Enum.Font.GothamBold
-                    else
-                        tab.Button.BackgroundColor3 = Color3.fromRGB(40,40,50)
-                        tab.Button.Font = Enum.Font.Gotham
-                    end
-                end
-            end)
-
-            return section
-        end
-
-        local tabSections = {}
-        for i,name in ipairs(tabNames) do
-            tabSections[i] = createTab(name, i)
-        end
-
-        if tabs[defaultIndex] then
-            tabs[defaultIndex].Button:MouseButton1Click()
-        end
-
-        return {
-            Select = function(idx)
-                if tabs[idx] then
-                    tabs[idx].Button:MouseButton1Click()
-                end
-            end,
-            GetSelected = function() return currentTab end,
-            GetTab = function(idx) return tabSections[idx] end,
+        tabs[idx] = {
+            Button = tabBtn,
+            Page = tabPage,
+            Name = name,
+            Section = section,
         }
+        tabSections[idx] = section
+
+        tabBtn.MouseButton1Click:Connect(function()
+            if currentTab then
+                currentTab.Page.Visible = false
+            end
+            currentTab = tabs[idx]
+            currentTab.Page.Visible = true
+
+            -- Update button visuals
+            for i, t in ipairs(tabs) do
+                if i == idx then
+                    t.Button.BackgroundColor3 = CurrentTheme.DotColorGreen
+                    t.Button.Font = Enum.Font.GothamBold
+                else
+                    t.Button.BackgroundColor3 = Color3.fromRGB(40,40,50)
+                    t.Button.Font = Enum.Font.Gotham
+                end
+            end
+        end)
+
+        return section
     end
+
+    for i, name in ipairs(tabNames) do
+        createTab(name, i)
+    end
+
+    -- select default tab
+    if tabs[defaultIndex] then
+        tabs[defaultIndex].Button:MouseButton1Click()
+    end
+
+    return {
+        Select = function(idx)
+            if tabs[idx] then
+                tabs[idx].Button:MouseButton1Click()
+            end
+        end,
+        GetSelected = function() return currentTab end,
+        GetTab = function(idx) return tabSections[idx] end,
+    }
+end
 
     -- Built-in theme controls
     do
