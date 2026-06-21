@@ -656,7 +656,7 @@ function UILib:CreateWindow(id)
             local row = newSectionRow(28)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1,-4,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -693,7 +693,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -703,7 +703,7 @@ function UILib:CreateWindow(id)
 
             local function refresh()
                 if state then
-                    btn.BackgroundColor3 = Window.Style.ButtonColor
+                    btn.BackgroundColor3 = Style.ButtonColor
                     btn.Text = "ON"
                 else
                     btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
@@ -781,7 +781,7 @@ function UILib:CreateWindow(id)
             local sliderFill = Instance.new("Frame")
             sliderFill.Size = UDim2.new(0,0,1,0)
             sliderFill.Position = UDim2.new(0,0,0,0)
-            sliderFill.BackgroundColor3 = Window.Style.SliderColor
+            sliderFill.BackgroundColor3 = Style.SliderColor
             sliderFill.BorderSizePixel = 0
             sliderFill.Parent = sliderBg
             local sfC = Instance.new("UICorner", sliderFill); sfC.CornerRadius = UDim.new(0,4)
@@ -949,7 +949,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
