@@ -7,6 +7,7 @@
 -- - Dropdowns support SetOptions/Rebuild
 -- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
+-- - GetTab(1..n) maps to your tabs, Settings is internal index 1
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -374,7 +375,7 @@ function UILib:CreateWindow(id)
     local frame = Instance.new("Frame")
     frame.Name = "Window"
     frame.AnchorPoint = Vector2.new(0,0)
-    frame.Size = UDim2.new(0,620,0,420)  -- larger default size
+    frame.Size = UDim2.new(0,620,0,420)
     frame.Position = UDim2.new(0.5,-310,0.5,-210)
     frame.BackgroundColor3 = Style.WindowColor
     frame.BorderSizePixel = 0
@@ -463,8 +464,8 @@ function UILib:CreateWindow(id)
     -- registries for recolor
     local sliderFills = {}
     local tabButtons = {}
-    local allButtons = {}   -- every button using Style.ButtonColor (ON toggles, normal buttons, color pickers)
-    local toggleButtons = {} -- map button -> state function
+    local allButtons = {}
+    local toggleButtons = {}
     local currentTabIndex = nil
 
     local function refreshSliders()
@@ -481,7 +482,6 @@ function UILib:CreateWindow(id)
                 btn.BackgroundColor3 = Style.ButtonColor
             end
         end
-        -- now fix toggles so OFF state stays dim
         for btn, info in pairs(toggleButtons) do
             if btn and btn.Parent then
                 local state = info.GetState()
@@ -1137,8 +1137,12 @@ function UILib:CreateWindow(id)
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
+        -- insert Settings at the front internally
         table.insert(tabNames, 1, "Settings")
-        defaultIndex = (defaultIndex or 1) + 1
+
+        -- caller: 1=Player,2=Visuals,3=Misc
+        defaultIndex = defaultIndex or 1
+        local internalDefault = defaultIndex + 1
 
         local tabs = {}
         local pagesHolder = Instance.new("Frame")
@@ -1197,7 +1201,7 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- Settings tab
+        -- Settings tab (internal index 1)
         local settingsSection = tabs[1].Section
         settingsSection:AddLabel("Theme")
 
@@ -1277,11 +1281,11 @@ function UILib:CreateWindow(id)
             end
         end)
 
-        local function selectTab(idx)
-            currentTabIndex = idx
+        local function selectTab(internalIdx)
+            currentTabIndex = internalIdx
             refreshTabButtons()
             for i, t in ipairs(tabs) do
-                t.Page.Visible = (i == idx)
+                t.Page.Visible = (i == internalIdx)
             end
         end
 
@@ -1291,18 +1295,26 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- default Settings tab
+        -- show Settings, then jump to requested default
         selectTab(1)
+        if tabs[internalDefault] then
+            selectTab(internalDefault)
+        end
 
         return {
+            -- your indices: 1=Player,2=Visuals,3=Misc
             Select = function(idx)
-                local real = idx + 1
-                if tabs[real] then selectTab(real) end
+                local internal = idx + 1
+                if tabs[internal] then selectTab(internal) end
             end,
-            GetSelected = function() return tabs[currentTabIndex] end,
+
+            GetSelected = function()
+                return tabs[currentTabIndex]
+            end,
+
             GetTab = function(idx)
-                local real = idx + 1
-                local t = tabs[real]
+                local internal = idx + 1
+                local t = tabs[internal]
                 return t and t.Section or nil
             end,
         }
