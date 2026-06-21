@@ -1,8 +1,13 @@
--- Apple-style UI Library
--- - Side tabs (vertical) with Settings added AFTER your tabs
+-- Apple-style UI Library (NO internal Settings tab)
+-- - Side tabs (vertical)
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
+-- - Live recolor of sliders, buttons, tab buttons when colors/themes change
+-- - Dropdowns support SetOptions/Rebuild
+-- - Sliders have a text input that controls the slider
+-- - Fixed fullscreen button
+-- - GetTab(1..n) maps to your tabs (no hidden Settings index)
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -508,7 +513,7 @@ function UILib:CreateWindow(id)
         end
     end
 
-    -- drag, resize, fullscreen (unchanged from your version)...
+    -- drag, resize, fullscreen
 
     local dragging = false
     local dragStart, startPos
@@ -1129,14 +1134,13 @@ function UILib:CreateWindow(id)
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
     function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS, SETTINGS ADDED BY LOCAL FUNCTION =========
+    --========= SIDE TABS (NO internal settings) =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
         defaultIndex = defaultIndex or 1
 
         local tabs = {}
-        local settingsTab = nil
 
         local pagesHolder = Instance.new("Frame")
         pagesHolder.Name = "PagesHolder"
@@ -1144,7 +1148,6 @@ function UILib:CreateWindow(id)
         pagesHolder.BackgroundTransparency = 1
         pagesHolder.Parent = content
 
-        -- 1) Create user tabs first
         for i, name in ipairs(tabNames) do
             local btn = Instance.new("TextButton")
             btn.Name = "TabButton_"..name
@@ -1195,146 +1198,6 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- local function to add Settings after all user tabs
-        local function addSettingsTab()
-            local name = "Settings"
-            local idx = #tabs + 1
-
-            local btn = Instance.new("TextButton")
-            btn.Name = "TabButton_"..name
-            btn.Size = UDim2.new(1,0,0,26)
-            btn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-            btn.BorderSizePixel = 0
-            btn.Font = Enum.Font.Gotham
-            btn.TextSize = 13
-            btn.TextColor3 = Color3.fromRGB(230,230,240)
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.Text = name
-            btn.Parent = tabsPanel
-            local bC = Instance.new("UICorner", btn); bC.CornerRadius = UDim.new(0,6)
-
-            local stroke = Instance.new("UIStroke")
-            stroke.Color = Color3.fromRGB(255,255,255)
-            stroke.Thickness = 1
-            stroke.Transparency = 0.7
-            stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-            stroke.Parent = btn
-
-            local page = Instance.new("Frame")
-            page.Name = "Page_"..name
-            page.Size = UDim2.new(1,0,1,0)
-            page.BackgroundTransparency = 1
-            page.Visible = false
-            page.ClipsDescendants = true
-            page.Parent = pagesHolder
-
-            local pageLayout = Instance.new("UIListLayout")
-            pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            pageLayout.Padding = UDim.new(0,6)
-            pageLayout.Parent = page
-
-            local section = makeSection(page, name)
-
-            settingsTab = {
-                Button = btn,
-                Page = page,
-                Section = section,
-                Stroke = stroke,
-                Name = name,
-            }
-
-            tabs[idx] = settingsTab
-            tabButtons[idx] = {
-                Button = btn,
-                Stroke = stroke,
-            }
-
-            -- build Settings UI
-            local settingsSection = settingsTab.Section
-
-            settingsSection:AddLabel("Theme")
-
-            local themeNames = {}
-            for n,_ in pairs(Themes) do table.insert(themeNames, n) end
-            table.sort(themeNames)
-            if not Themes[CurrentThemeName] then CurrentThemeName = "Dark" end
-
-            local currentThemeIdx = 1
-            for i,n in ipairs(themeNames) do
-                if n == CurrentThemeName then currentThemeIdx = i break end
-            end
-
-            local themeDropdown = settingsSection:AddDropdown("Theme", themeNames, currentThemeIdx, function(val)
-                if Themes[val] then
-                    CurrentThemeName = val
-                    local t = Themes[val]
-                    Style.WindowColor = t.WindowColor
-                    Style.ButtonColor = t.ButtonColor
-                    Style.SliderColor = t.SliderColor
-                    frame.BackgroundColor3 = Style.WindowColor
-                    refreshSliders()
-                    refreshButtons()
-                    refreshTabButtons()
-                    saveThemes()
-                    saveConfig()
-                end
-            end)
-
-            settingsSection:AddLabel("Colors")
-
-            settingsSection:AddColorPicker("Window color", Style.WindowColor, function(col)
-                Style.WindowColor = col
-                frame.BackgroundColor3 = col
-                Themes[CurrentThemeName].WindowColor = col
-                saveThemes()
-            end)
-
-            settingsSection:AddColorPicker("Button color", Style.ButtonColor, function(col)
-                Style.ButtonColor = col
-                Themes[CurrentThemeName].ButtonColor = col
-                refreshButtons()
-                refreshTabButtons()
-                saveThemes()
-            end)
-
-            settingsSection:AddColorPicker("Slider color", Style.SliderColor, function(col)
-                Style.SliderColor = col
-                Themes[CurrentThemeName].SliderColor = col
-                refreshSliders()
-                saveThemes()
-            end)
-
-            local nameBox = settingsSection:AddTextBox("Theme name", CurrentThemeName, function() end)
-
-            settingsSection:AddButton("Save theme", function()
-                local name = nameBox.Get()
-                name = name:gsub("^%s+",""):gsub("%s+$","")
-                if name == "" then return end
-                Themes[name] = {
-                    WindowColor = Style.WindowColor,
-                    ButtonColor = Style.ButtonColor,
-                    SliderColor = Style.SliderColor,
-                }
-                CurrentThemeName = name
-                saveThemes()
-                saveConfig()
-                themeNames = {}
-                for n,_ in pairs(Themes) do table.insert(themeNames, n) end
-                table.sort(themeNames)
-                themeDropdown.SetOptions(themeNames)
-                for i,n in ipairs(themeNames) do
-                    if n == name then
-                        themeDropdown.Set(i)
-                        break
-                    end
-                end
-            end)
-        end
-
-        -- call local function to add Settings after user tabs
-        addSettingsTab()
-
-        -- selection logic
         local function selectTab(internalIdx)
             currentTabIndex = internalIdx
             refreshTabButtons()
@@ -1349,15 +1212,13 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- start on requested user tab
         if tabs[defaultIndex] then
             selectTab(defaultIndex)
-        else
+        elseif tabs[1] then
             selectTab(1)
         end
 
         return {
-            -- 1..#tabNames = your tabs
             Select = function(idx)
                 idx = tonumber(idx)
                 if idx and tabs[idx] then
@@ -1374,10 +1235,6 @@ function UILib:CreateWindow(id)
                 if not idx then return nil end
                 local t = tabs[idx]
                 return t and t.Section or nil
-            end,
-
-            GetSettings = function()
-                return settingsTab and settingsTab.Section or nil
             end,
         }
     end
