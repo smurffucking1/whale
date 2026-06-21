@@ -4,11 +4,13 @@
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
 -- - Live recolor of existing sliders & tab buttons when colors/themes change
+-- - Dropdowns support SetOptions/Rebuild
+-- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
 
-local UIS        = game:GetService("UserInputService")
-local CoreGui    = game:GetService("CoreGui")
-local HttpService= game:GetService("HttpService")
+local UIS         = game:GetService("UserInputService")
+local CoreGui     = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 local UILib = {}
 UILib.__index = UILib
@@ -367,7 +369,7 @@ function UILib:CreateWindow(id)
         SliderColor = Theme.SliderColor,
     }
 
-    getWindowConfig(id) -- ensure exists
+    getWindowConfig(id)
 
     local frame = Instance.new("Frame")
     frame.Name = "Window"
@@ -731,16 +733,17 @@ function UILib:CreateWindow(id)
             lbl.Text = labelText or "Slider"
             lbl.Parent = row
 
-            local valueLabel = Instance.new("TextLabel")
-            valueLabel.BackgroundTransparency = 1
-            valueLabel.Size = UDim2.new(0,50,0,16)
-            valueLabel.Position = UDim2.new(0.35,4,0,0)
-            valueLabel.Font = Enum.Font.GothamBold
-            valueLabel.TextSize = 14
-            valueLabel.TextColor3 = Color3.fromRGB(240,240,250)
-            valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-            valueLabel.Text = tostring(defVal)
-            valueLabel.Parent = row
+            local valueBox = Instance.new("TextBox")
+            valueBox.BackgroundTransparency = 1
+            valueBox.Size = UDim2.new(0,50,0,16)
+            valueBox.Position = UDim2.new(0.35,4,0,0)
+            valueBox.Font = Enum.Font.GothamBold
+            valueBox.TextSize = 14
+            valueBox.TextColor3 = Color3.fromRGB(240,240,250)
+            valueBox.TextXAlignment = Enum.TextXAlignment.Left
+            valueBox.ClearTextOnFocus = false
+            valueBox.Text = tostring(defVal)
+            valueBox.Parent = row
 
             local sliderBg = Instance.new("Frame")
             sliderBg.Size = UDim2.new(0.65,-4,0,8)
@@ -781,7 +784,7 @@ function UILib:CreateWindow(id)
                 local pct = (val-minVal)/(maxVal-minVal)
                 sliderFill.Size = UDim2.new(pct,0,1,0)
                 sliderDot.Position = UDim2.new(pct,0,0.5,0)
-                valueLabel.Text = tostring(val)
+                valueBox.Text = tostring(val)
                 setControl(Window.Id, key, "Slider", val)
                 if callback then callback(val) end
             end
@@ -816,6 +819,17 @@ function UILib:CreateWindow(id)
                     local pct = relX / bgSize.X
                     update(minVal + pct * (maxVal-minVal))
                 end
+            end)
+
+            valueBox.FocusLost:Connect(function(enter)
+                if not enter then return end
+                local num = tonumber(valueBox.Text)
+                if not num then
+                    valueBox.Text = tostring(val)
+                    return
+                end
+                num = clampNum(num, minVal, maxVal)
+                update(num)
             end)
 
             return {
@@ -1059,9 +1073,26 @@ function UILib:CreateWindow(id)
             end)
 
             return {
-                Get = function() return options[selectedIndex], selectedIndex end,
-                Set = function(i) if options[i] then setSel(i) end end,
-                Rebuild = rebuild,
+                Get = function()
+                    return options[selectedIndex], selectedIndex
+                end,
+                Set = function(i)
+                    if options[i] then
+                        setSel(i)
+                    end
+                end,
+                Rebuild = function()
+                    rebuild()
+                end,
+                SetOptions = function(newOptions, newIndex)
+                    options = newOptions or {}
+                    selectedIndex = 1
+                    if typeof(newIndex) == "number" and options[newIndex] then
+                        selectedIndex = newIndex
+                    end
+                    rebuild()
+                    setSel(selectedIndex)
+                end,
             }
         end
 
@@ -1210,7 +1241,14 @@ function UILib:CreateWindow(id)
             themeNames = {}
             for n,_ in pairs(Themes) do table.insert(themeNames, n) end
             table.sort(themeNames)
-            themeDropdown.Rebuild()
+            themeDropdown.SetOptions(themeNames)
+            -- jump to new theme in dropdown
+            for i,n in ipairs(themeNames) do
+                if n == name then
+                    themeDropdown.Set(i)
+                    break
+                end
+            end
         end)
 
         local function selectTab(idx)
