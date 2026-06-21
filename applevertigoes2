@@ -7,7 +7,7 @@
 -- - Dropdowns support SetOptions/Rebuild
 -- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
--- - GetTab(1..n) maps to your tabs (no hidden Settings index)
+-- - GetTab(1..n) maps to your tabs (no hidden indices)
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -656,7 +656,7 @@ function UILib:CreateWindow(id)
             local row = newSectionRow(28)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1,-4,1,0)
-            btn.BackgroundColor3 = Style.ButtonColor
+            btn.BackgroundColor3 = Window.Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -693,7 +693,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Style.ButtonColor
+            btn.BackgroundColor3 = Window.Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -703,7 +703,7 @@ function UILib:CreateWindow(id)
 
             local function refresh()
                 if state then
-                    btn.BackgroundColor3 = Style.ButtonColor
+                    btn.BackgroundColor3 = Window.Style.ButtonColor
                     btn.Text = "ON"
                 else
                     btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
@@ -781,7 +781,7 @@ function UILib:CreateWindow(id)
             local sliderFill = Instance.new("Frame")
             sliderFill.Size = UDim2.new(0,0,1,0)
             sliderFill.Position = UDim2.new(0,0,0,0)
-            sliderFill.BackgroundColor3 = Style.SliderColor
+            sliderFill.BackgroundColor3 = Window.Style.SliderColor
             sliderFill.BorderSizePixel = 0
             sliderFill.Parent = sliderBg
             local sfC = Instance.new("UICorner", sliderFill); sfC.CornerRadius = UDim.new(0,4)
@@ -949,7 +949,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Style.ButtonColor
+            btn.BackgroundColor3 = Window.Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -1134,7 +1134,7 @@ function UILib:CreateWindow(id)
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
     function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS (NO internal settings) =========
+    --========= SIDE TABS (simple) =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
@@ -1185,11 +1185,11 @@ function UILib:CreateWindow(id)
             local section = makeSection(page, name)
 
             tabs[i] = {
-                Button = btn,
-                Page = page,
+                Button  = btn,
+                Page    = page,
                 Section = section,
-                Stroke = stroke,
-                Name = name,
+                Stroke  = stroke,
+                Name    = name,
             }
 
             tabButtons[i] = {
@@ -1198,11 +1198,12 @@ function UILib:CreateWindow(id)
             }
         end
 
-        local function selectTab(internalIdx)
-            currentTabIndex = internalIdx
+        local function selectTab(index)
+            if not tabs[index] then return end
+            currentTabIndex = index
             refreshTabButtons()
             for i, t in ipairs(tabs) do
-                t.Page.Visible = (i == internalIdx)
+                t.Page.Visible = (i == index)
             end
         end
 
@@ -1218,25 +1219,27 @@ function UILib:CreateWindow(id)
             selectTab(1)
         end
 
-        return {
-            Select = function(idx)
-                idx = tonumber(idx)
-                if idx and tabs[idx] then
-                    selectTab(idx)
-                end
-            end,
+        local TabsAPI = {}
 
-            GetSelected = function()
-                return tabs[currentTabIndex]
-            end,
+        function TabsAPI:Select(idx)
+            idx = tonumber(idx)
+            if idx and tabs[idx] then
+                selectTab(idx)
+            end
+        end
 
-            GetTab = function(idx)
-                idx = tonumber(idx)
-                if not idx then return nil end
-                local t = tabs[idx]
-                return t and t.Section or nil
-            end,
-        }
+        function TabsAPI:GetSelected()
+            return tabs[currentTabIndex]
+        end
+
+        function TabsAPI:GetTab(idx)
+            idx = tonumber(idx)
+            if not idx then return nil end
+            local t = tabs[idx]
+            return t and t.Section or nil
+        end
+
+        return TabsAPI
     end
 
     UILib.Windows[id] = Window
