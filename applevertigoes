@@ -1,5 +1,13 @@
--- Apple-style UI Library: side tabs + sliders + dropdowns + textboxes + toggles + color picker
--- Default "Settings" tab with color pickers for window, button, and slider colors.
+-- Apple-style UI Library with:
+-- - Side tabs (vertical)
+-- - Sliders, toggles, textboxes, buttons, color pickers
+-- - Built-in "Settings" tab
+-- - Theme system (Dark, OLED) + custom themes, saved to APPLE_REC/themes.json
+-- - Autosave of:
+--     * Selected theme name (autoload)
+--     * Theme colors (window, button, slider)
+--     * All control values (slider, toggle, textbox, dropdown, color picker)
+--   to APPLE_REC/config.json
 
 local UIS = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -8,6 +16,148 @@ local HttpService = game:GetService("HttpService")
 local UILib = {}
 UILib.__index = UILib
 UILib.Windows = {}
+
+--================ FS + THEME/CONFIG =================
+
+local ROOT_FOLDER = "APPLE_REC"
+local THEMES_FILE = ROOT_FOLDER.."/themes.json"
+local CONFIG_FILE = ROOT_FOLDER.."/config.json"
+
+local function fsSupported()
+    return isfolder and makefolder and isfile and readfile and writefile
+end
+
+local function ensureRoot()
+    if fsSupported() and not isfolder(ROOT_FOLDER) then
+        makefolder(ROOT_FOLDER)
+    end
+end
+
+ensureRoot()
+
+local Themes = {
+    Dark = {
+        WindowColor = Color3.fromRGB(25,25,32),
+        ButtonColor = Color3.fromRGB(60,60,80),
+        SliderColor = Color3.fromRGB(39,201,63),
+    },
+    OLED = {
+        WindowColor = Color3.new(0,0,0),
+        ButtonColor = Color3.fromRGB(35,35,45),
+        SliderColor = Color3.fromRGB(0,200,150),
+    },
+}
+
+local CurrentThemeName = "Dark"
+
+local Config = {
+    ThemeName = CurrentThemeName,
+    Themes = {},
+    Windows = {}, -- per-window persisted controls
+}
+
+local function serializeColor(c)
+    return {R = c.R, G = c.G, B = c.B}
+end
+
+local function deserializeColor(t, fallback)
+    if type(t) == "table" and t.R and t.G and t.B then
+        return Color3.new(t.R, t.G, t.B)
+    end
+    return fallback
+end
+
+local function loadThemes()
+    if not fsSupported() then return end
+    ensureRoot()
+    if isfile(THEMES_FILE) then
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(THEMES_FILE))
+        end)
+        if ok and type(data) == "table" then
+            for name, t in pairs(data) do
+                if type(t) == "table" and t.WindowColor and t.ButtonColor and t.SliderColor then
+                    Themes[name] = {
+                        WindowColor = deserializeColor(t.WindowColor, Themes.Dark.WindowColor),
+                        ButtonColor = deserializeColor(t.ButtonColor, Themes.Dark.ButtonColor),
+                        SliderColor = deserializeColor(t.SliderColor, Themes.Dark.SliderColor),
+                    }
+                end
+            end
+        end
+    end
+end
+
+local function saveThemes()
+    if not fsSupported() then return end
+    ensureRoot()
+    local out = {}
+    for name, t in pairs(Themes) do
+        out[name] = {
+            WindowColor = serializeColor(t.WindowColor),
+            ButtonColor = serializeColor(t.ButtonColor),
+            SliderColor = serializeColor(t.SliderColor),
+        }
+    end
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(out)
+    end)
+    if ok then
+        writefile(THEMES_FILE, encoded)
+    end
+end
+
+local function loadConfig()
+    if not fsSupported() then return end
+    ensureRoot()
+    if isfile(CONFIG_FILE) then
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(CONFIG_FILE))
+        end)
+        if ok and type(data) == "table" then
+            Config = data
+            if Config.ThemeName and Themes[Config.ThemeName] then
+                CurrentThemeName = Config.ThemeName
+            end
+        end
+    end
+end
+
+local function saveConfig()
+    if not fsSupported() then return end
+    ensureRoot()
+    Config.ThemeName = CurrentThemeName
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(Config)
+    end)
+    if ok then
+        writefile(CONFIG_FILE, encoded)
+    end
+end
+
+local function getWindowConfig(winId)
+    Config.Windows[winId] = Config.Windows[winId] or {Controls = {}}
+    return Config.Windows[winId]
+end
+
+local function setControl(winId, key, ctype, value)
+    local w = getWindowConfig(winId)
+    w.Controls[key] = {Type = ctype, Value = value}
+    saveConfig()
+end
+
+local function getControl(winId, key, expectedType)
+    local w = Config.Windows[winId]
+    if not w or not w.Controls or not w.Controls[key] then
+        return nil
+    end
+    local c = w.Controls[key]
+    if expectedType and c.Type ~= expectedType then return nil end
+    return c.Value
+end
+
+loadThemes()
+loadConfig()
 
 --================ COLOR WHEEL ================
 
@@ -194,6 +344,12 @@ local function clampNum(v, mn, mx)
     return (v < mn and mn) or (v > mx and mx) or v
 end
 
+local function controlKey(kind, label, extra)
+    local base = (label or kind):gsub("%s+","_")
+    if extra then base = base.."_"..extra end
+    return kind..":"..base
+end
+
 --================ WINDOW ================
 
 function UILib:CreateWindow(id)
@@ -209,12 +365,15 @@ function UILib:CreateWindow(id)
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = CoreGui
 
-    -- shared style for this window
+    -- active theme colors for this window
+    local Theme = Themes[CurrentThemeName] or Themes.Dark
     local Style = {
-        WindowColor  = Color3.fromRGB(25,25,32),
-        ButtonColor  = Color3.fromRGB(60,60,80),
-        SliderColor  = Color3.fromRGB(39,201,63),
+        WindowColor = Theme.WindowColor,
+        ButtonColor = Theme.ButtonColor,
+        SliderColor = Theme.SliderColor,
     }
+
+    local winCfg = getWindowConfig(id)
 
     local frame = Instance.new("Frame")
     frame.Name = "Window"
@@ -305,7 +464,7 @@ function UILib:CreateWindow(id)
         return r
     end
 
-    -- Drag / resize
+    -- Drag & resize
     local dragging = false
     local dragStart, startPos
 
@@ -393,16 +552,18 @@ function UILib:CreateWindow(id)
         end
     end)
 
-    --======= SECTION FACTORY =======
+    --======== SECTION FACTORY (style-aware + autosave) ========
 
     local Window = {}
     Window.Frame = frame
     Window.Content = content
     Window.Style = Style
+    Window.Id = id
 
-    local function makeSection(parentFrame)
+    local function makeSection(parentFrame, sectionExtra)
         local Section = {}
         Section.Parent = parentFrame
+        Section.SectionExtra = sectionExtra
 
         local function newSectionRow(h)
             return newRow(h, parentFrame)
@@ -441,6 +602,10 @@ function UILib:CreateWindow(id)
         end
 
         function Section:AddToggle(labelText, defaultState, callback)
+            local key = controlKey("Toggle", labelText, Section.SectionExtra)
+            local saved = getControl(Window.Id, key, "Toggle")
+            local state = (typeof(saved) == "boolean") and saved or (defaultState == true)
+
             local row = newSectionRow(28)
 
             local lbl = Instance.new("TextLabel")
@@ -466,8 +631,6 @@ function UILib:CreateWindow(id)
             btn.Parent = row
             local bC = Instance.new("UICorner", btn); bC.CornerRadius = UDim.new(0,4)
 
-            local state = defaultState == true
-
             local function refresh()
                 if state then
                     btn.BackgroundColor3 = Style.ButtonColor
@@ -480,6 +643,7 @@ function UILib:CreateWindow(id)
 
             local function setState(v)
                 state = v and true or false
+                setControl(Window.Id, key, "Toggle", state)
                 refresh()
                 if callback then callback(state) end
             end
@@ -500,7 +664,14 @@ function UILib:CreateWindow(id)
             minVal = minVal or 0
             maxVal = maxVal or 100
             step   = step or 1
-            defVal = clampNum(defVal or minVal, minVal, maxVal)
+
+            local key = controlKey("Slider", labelText, Section.SectionExtra)
+            local saved = getControl(Window.Id, key, "Slider")
+            if typeof(saved) == "number" then
+                defVal = clampNum(saved, minVal, maxVal)
+            else
+                defVal = clampNum(defVal or minVal, minVal, maxVal)
+            end
 
             local row = newSectionRow(36)
 
@@ -564,6 +735,7 @@ function UILib:CreateWindow(id)
                 sliderFill.Size = UDim2.new(pct,0,1,0)
                 sliderDot.Position = UDim2.new(pct,0,0.5,0)
                 valueLabel.Text = tostring(val)
+                setControl(Window.Id, key, "Slider", val)
                 if callback then callback(val) end
             end
 
@@ -607,6 +779,9 @@ function UILib:CreateWindow(id)
         end
 
         function Section:AddTextBox(labelText, placeholder, callback)
+            local key = controlKey("TextBox", labelText, Section.SectionExtra)
+            local saved = getControl(Window.Id, key, "TextBox")
+
             local row = newSectionRow(28)
 
             local lbl = Instance.new("TextLabel")
@@ -635,20 +810,35 @@ function UILib:CreateWindow(id)
             textBox.Parent = row
             local tbC = Instance.new("UICorner", textBox); tbC.CornerRadius = UDim.new(0,4)
 
+            if typeof(saved) == "string" then
+                textBox.Text = saved
+            end
+
             textBox.FocusLost:Connect(function(enter)
-                if enter and callback then
-                    callback(textBox.Text)
+                if enter then
+                    setControl(Window.Id, key, "TextBox", textBox.Text)
+                    if callback then callback(textBox.Text) end
                 end
             end)
 
             return {
                 Get = function() return textBox.Text end,
-                Set = function(t) textBox.Text = t end,
+                Set = function(t)
+                    textBox.Text = t
+                    setControl(Window.Id, key, "TextBox", t)
+                end,
             }
         end
 
         function Section:AddColorPicker(labelText, startColor, callback)
-            startColor = startColor or Color3.new(1,1,1)
+            local key = controlKey("Color", labelText, Section.SectionExtra)
+            local saved = getControl(Window.Id, key, "Color")
+            if saved then
+                startColor = deserializeColor(saved, startColor or Color3.new(1,1,1))
+            else
+                startColor = startColor or Color3.new(1,1,1)
+            end
+
             local row = newSectionRow(28)
 
             local lbl = Instance.new("TextLabel")
@@ -685,42 +875,170 @@ function UILib:CreateWindow(id)
 
             local current = startColor
 
+            local function persist(col)
+                setControl(Window.Id, key, "Color", serializeColor(col))
+            end
+
             btn.MouseButton1Click:Connect(function()
                 openColorWheel(current, function(col)
                     current = col
                     preview.BackgroundColor3 = col
+                    persist(col)
                     if callback then callback(col) end
                 end)
             end)
+
+            -- initial save
+            persist(current)
 
             return {
                 Get = function() return current end,
                 Set = function(c)
                     current = c
                     preview.BackgroundColor3 = c
+                    persist(c)
                     if callback then callback(c) end
                 end
+            }
+        end
+
+        function Section:AddDropdown(labelText, options, defIndex, callback)
+            options = options or {}
+            defIndex = defIndex or 1
+
+            local key = controlKey("Dropdown", labelText, Section.SectionExtra)
+            local saved = getControl(Window.Id, key, "Dropdown")
+            if typeof(saved) == "number" and options[saved] then
+                defIndex = saved
+            end
+
+            local row = newSectionRow(28)
+            row.ClipsDescendants = true
+            local baseHeight = 28
+            local ddVisible = false
+            local ddHeight = 0
+
+            local lbl = Instance.new("TextLabel")
+            lbl.BackgroundTransparency = 1
+            lbl.Size = UDim2.new(0.35,-4,0,baseHeight)
+            lbl.Position = UDim2.new(0,0,0,0)
+            lbl.Font = Enum.Font.Gotham
+            lbl.TextSize = 14
+            lbl.TextColor3 = Color3.fromRGB(230,230,240)
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Text = labelText or "Dropdown"
+            lbl.Parent = row
+
+            local btn = Instance.new("TextButton")
+            btn.AnchorPoint = Vector2.new(1,0)
+            btn.Position = UDim2.new(1,0,0,0)
+            btn.Size = UDim2.new(0.65,0,0,baseHeight)
+            btn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 14
+            btn.TextColor3 = Color3.fromRGB(240,240,250)
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.Text = options[defIndex] or "None"
+            btn.Parent = row
+            local bC2 = Instance.new("UICorner", btn); bC2.CornerRadius = UDim.new(0,4)
+
+            local dd = Instance.new("Frame")
+            dd.BackgroundColor3 = Color3.fromRGB(30,30,40)
+            dd.BorderSizePixel = 0
+            dd.Size = UDim2.new(1,0,0,0)
+            dd.Position = UDim2.new(0,0,0,baseHeight)
+            dd.Visible = false
+            dd.Parent = row
+            local dC2 = Instance.new("UICorner", dd); dC2.CornerRadius = UDim.new(0,4)
+
+            local ddLayout = Instance.new("UIListLayout")
+            ddLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            ddLayout.Padding = UDim.new(0,2)
+            ddLayout.Parent = dd
+
+            local selectedIndex = defIndex
+
+            local function setRowHeight()
+                if ddVisible then
+                    row.Size = UDim2.new(1,0,0,baseHeight + ddHeight + 4)
+                else
+                    row.Size = UDim2.new(1,0,0,baseHeight)
+                end
+            end
+
+            local function setSel(i)
+                selectedIndex = i
+                btn.Text = options[i] or "None"
+                setControl(Window.Id, key, "Dropdown", i)
+                if callback then callback(options[i], i) end
+            end
+
+            local function rebuild()
+                for _,child in ipairs(dd:GetChildren()) do
+                    if child:IsA("TextButton") then child:Destroy() end
+                end
+                local count = 0
+                for i, opt in ipairs(options) do
+                    count += 1
+                    local o = Instance.new("TextButton")
+                    o.Size = UDim2.new(1,-8,0,20)
+                    o.Position = UDim2.new(0,4,0,0)
+                    o.BackgroundColor3 = Color3.fromRGB(40,40,50)
+                    o.BorderSizePixel = 0
+                    o.Font = Enum.Font.Gotham
+                    o.TextSize = 13
+                    o.TextColor3 = Color3.fromRGB(230,230,240)
+                    o.TextXAlignment = Enum.TextXAlignment.Left
+                    o.Text = tostring(opt)
+                    o.Parent = dd
+                    o.MouseButton1Click:Connect(function()
+                        setSel(i)
+                        ddVisible = false
+                        dd.Visible = false
+                        setRowHeight()
+                    end)
+                end
+                ddHeight = math.max(1,count)*22
+                dd.Size = UDim2.new(1,0,0,ddHeight)
+                if ddVisible then setRowHeight() end
+            end
+
+            rebuild()
+            setSel(defIndex)
+
+            btn.MouseButton1Click:Connect(function()
+                ddVisible = not ddVisible
+                dd.Visible = ddVisible
+                setRowHeight()
+            end)
+
+            return {
+                Get = function() return options[selectedIndex], selectedIndex end,
+                Set = function(i) if options[i] then setSel(i) end end,
+                Rebuild = rebuild,
             }
         end
 
         return Section
     end
 
-    local MainSection = makeSection(content)
+    local MainSection = makeSection(content, "Main")
     function Window:AddLabel(...)       return MainSection:AddLabel(...) end
     function Window:AddButton(...)      return MainSection:AddButton(...) end
     function Window:AddToggle(...)      return MainSection:AddToggle(...) end
     function Window:AddSlider(...)      return MainSection:AddSlider(...) end
     function Window:AddTextBox(...)     return MainSection:AddTextBox(...) end
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
+    function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS (with default Settings) =========
+    --========= SIDE TABS WITH SETTINGS & THEMES =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
-        -- always inject Settings as first tab
+        -- inject Settings tab at index 1
         table.insert(tabNames, 1, "Settings")
-        defaultIndex = (defaultIndex or 1) + 1  -- shift user default by 1
+        defaultIndex = (defaultIndex or 1) + 1
 
         local tabs = {}
         local currentTab = nil
@@ -765,7 +1083,7 @@ function UILib:CreateWindow(id)
             pageLayout.Padding = UDim.new(0,6)
             pageLayout.Parent = page
 
-            local section = makeSection(page)
+            local section = makeSection(page, name)
 
             tabs[i] = {
                 Button = btn,
@@ -776,22 +1094,74 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- Settings tab UI (tab index 1)
+        -- Settings tab UI (index 1)
         local settingsSection = tabs[1].Section
-        settingsSection:AddLabel("Appearance")
+        settingsSection:AddLabel("Theme")
+
+        -- Theme dropdown
+        local themeNames = {}
+        for name,_ in pairs(Themes) do table.insert(themeNames, name) end
+        table.sort(themeNames)
+
+        -- ensure current theme is valid
+        if not Themes[CurrentThemeName] then
+            CurrentThemeName = "Dark"
+        end
+
+        local currentThemeIdx = 1
+        for i,name in ipairs(themeNames) do
+            if name == CurrentThemeName then currentThemeIdx = i break end
+        end
+
+        local themeDropdown = settingsSection:AddDropdown("Theme", themeNames, currentThemeIdx, function(val)
+            if Themes[val] then
+                CurrentThemeName = val
+                local t = Themes[val]
+                Style.WindowColor = t.WindowColor
+                Style.ButtonColor = t.ButtonColor
+                Style.SliderColor = t.SliderColor
+                frame.BackgroundColor3 = Style.WindowColor
+                saveThemes()
+                saveConfig()
+            end
+        end)
+
+        settingsSection:AddLabel("Colors")
 
         settingsSection:AddColorPicker("Window color", Style.WindowColor, function(col)
             Style.WindowColor = col
             frame.BackgroundColor3 = col
+            Themes[CurrentThemeName].WindowColor = col
+            saveThemes()
         end)
 
         settingsSection:AddColorPicker("Button color", Style.ButtonColor, function(col)
             Style.ButtonColor = col
-            -- change all current tab buttons to new style if ON; simple demo keeps it for new ones
+            Themes[CurrentThemeName].ButtonColor = col
+            saveThemes()
         end)
 
         settingsSection:AddColorPicker("Slider color", Style.SliderColor, function(col)
             Style.SliderColor = col
+            Themes[CurrentThemeName].SliderColor = col
+            saveThemes()
+        end)
+
+        -- Save theme as...
+        local saveThemeRow = tabs[1].Section:AddTextBox("Save theme as", CurrentThemeName, function(name)
+            name = name:gsub("^%s+",""):gsub("%s+$","")
+            if name == "" then return end
+            Themes[name] = {
+                WindowColor = Style.WindowColor,
+                ButtonColor = Style.ButtonColor,
+                SliderColor = Style.SliderColor,
+            }
+            saveThemes()
+            -- rebuild dropdown options
+            themeNames = {}
+            for n,_ in pairs(Themes) do table.insert(themeNames, n) end
+            table.sort(themeNames)
+            themeDropdown.Rebuild()
         end)
 
         local function selectTab(idx)
@@ -819,12 +1189,11 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- default select Settings (index 1)
+        -- default: Settings tab
         selectTab(1)
 
         return {
             Select = function(idx)
-                -- user expects index 1 to be their first custom, so shift by 1
                 local real = idx + 1
                 if tabs[real] then selectTab(real) end
             end,
