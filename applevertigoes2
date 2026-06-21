@@ -1,5 +1,5 @@
 -- Apple-style UI Library
--- - Side tabs (vertical) with auto "Settings" tab
+-- - Side tabs (vertical) with Settings shown last
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
@@ -7,7 +7,7 @@
 -- - Dropdowns support SetOptions/Rebuild
 -- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
--- - GetTab(1..n) maps to your tabs, Settings is internal index 1
+-- - GetTab(1..n) maps to your tabs, Settings is last internal tab
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -429,13 +429,13 @@ function UILib:CreateWindow(id)
 
     local tabsLayout = Instance.new("UIListLayout")
     tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabsLayout.Padding = UDim.new(0,4)
+    tabsLayout.Padding = UDim2.new(0,4)
     tabsLayout.Parent = tabsPanel
 
     local tabsPad = Instance.new("UIPadding")
-    tabsPad.PaddingTop = UDim.new(0,6)
-    tabsPad.PaddingLeft = UDim.new(0,6)
-    tabsPad.PaddingRight = UDim.new(0,6)
+    tabsPad.PaddingTop = UDim2.new(0,6)
+    tabsPad.PaddingLeft = UDim2.new(0,6)
+    tabsPad.PaddingRight = UDim2.new(0,6)
     tabsPad.Parent = tabsPanel
 
     local content = Instance.new("Frame")
@@ -448,7 +448,7 @@ function UILib:CreateWindow(id)
 
     local contentLayout = Instance.new("UIListLayout")
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    contentLayout.Padding = UDim.new(0,6)
+    contentLayout.Padding = UDim2.new(0,6)
     contentLayout.Parent = content
 
     local function newRow(h, parent)
@@ -655,7 +655,7 @@ function UILib:CreateWindow(id)
             local row = newSectionRow(28)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1,-4,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -692,7 +692,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -702,7 +702,7 @@ function UILib:CreateWindow(id)
 
             local function refresh()
                 if state then
-                    btn.BackgroundColor3 = Window.Style.ButtonColor
+                    btn.BackgroundColor3 = Style.ButtonColor
                     btn.Text = "ON"
                 else
                     btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
@@ -780,7 +780,7 @@ function UILib:CreateWindow(id)
             local sliderFill = Instance.new("Frame")
             sliderFill.Size = UDim2.new(0,0,1,0)
             sliderFill.Position = UDim2.new(0,0,0,0)
-            sliderFill.BackgroundColor3 = Window.Style.SliderColor
+            sliderFill.BackgroundColor3 = Style.SliderColor
             sliderFill.BorderSizePixel = 0
             sliderFill.Parent = sliderBg
             local sfC = Instance.new("UICorner", sliderFill); sfC.CornerRadius = UDim.new(0,4)
@@ -948,7 +948,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Window.Style.ButtonColor
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -1038,7 +1038,7 @@ function UILib:CreateWindow(id)
 
             local ddLayout = Instance.new("UIListLayout")
             ddLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            ddLayout.Padding = UDim.new(0,2)
+            ddLayout.Padding = UDim2.new(0,2)
             ddLayout.Parent = dd
 
             local selectedIndex = defIndex
@@ -1133,16 +1133,20 @@ function UILib:CreateWindow(id)
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
     function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS WITH SETTINGS & THEMES =========
+    --========= SIDE TABS WITH SETTINGS (LAST) & THEMES =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
-        -- insert Settings at the front internally
-        table.insert(tabNames, 1, "Settings")
-
-        -- caller: 1=Player,2=Visuals,3=Misc
         defaultIndex = defaultIndex or 1
-        local internalDefault = defaultIndex + 1
+
+        -- internalNames: your tabs first, then Settings last
+        local internalNames = {}
+        for i, name in ipairs(tabNames) do
+            internalNames[#internalNames+1] = name
+        end
+        internalNames[#internalNames+1] = "Settings"
+
+        local internalDefault = defaultIndex
 
         local tabs = {}
         local pagesHolder = Instance.new("Frame")
@@ -1151,7 +1155,7 @@ function UILib:CreateWindow(id)
         pagesHolder.BackgroundTransparency = 1
         pagesHolder.Parent = content
 
-        for i, name in ipairs(tabNames) do
+        for i, name in ipairs(internalNames) do
             local btn = Instance.new("TextButton")
             btn.Name = "TabButton_"..name
             btn.Size = UDim2.new(1,0,0,26)
@@ -1182,7 +1186,7 @@ function UILib:CreateWindow(id)
 
             local pageLayout = Instance.new("UIListLayout")
             pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            pageLayout.Padding = UDim.new(0,6)
+            pageLayout.Padding = UDim2.new(0,6)
             pageLayout.Parent = page
 
             local section = makeSection(page, name)
@@ -1201,8 +1205,9 @@ function UILib:CreateWindow(id)
             }
         end
 
-        -- Settings tab (internal index 1)
-        local settingsSection = tabs[1].Section
+        -- Settings tab is last internal index
+        local settingsIndex = #internalNames
+        local settingsSection = tabs[settingsIndex].Section
         settingsSection:AddLabel("Theme")
 
         local themeNames = {}
@@ -1295,19 +1300,21 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- show Settings, then jump to requested default
-        selectTab(1)
+        -- show your requested default; if invalid, fall back to first tab
         if tabs[internalDefault] then
             selectTab(internalDefault)
+        else
+            selectTab(1)
         end
 
         return {
-            -- your indices: 1=Player,2=Visuals,3=Misc
+            -- external indices: 1..#tabNames (no Settings)
             Select = function(idx)
                 idx = tonumber(idx)
                 if not idx then return end
-                local internal = idx + 1
-                if tabs[internal] then selectTab(internal) end
+                if tabs[idx] then
+                    selectTab(idx)
+                end
             end,
 
             GetSelected = function()
@@ -1317,8 +1324,8 @@ function UILib:CreateWindow(id)
             GetTab = function(idx)
                 idx = tonumber(idx)
                 if not idx then return nil end
-                local internal = idx + 1
-                local t = tabs[internal]
+                if idx < 1 or idx > #tabNames then return nil end
+                local t = tabs[idx]
                 return t and t.Section or nil
             end,
         }
