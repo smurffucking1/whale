@@ -390,7 +390,10 @@ function UILib:CreateWindow(id)
     topStrip.Size = UDim2.new(1,-16,0,20)
     topStrip.Position = UDim2.new(0,8,0,4)
     topStrip.Parent = frame
-    local tsC = Instance.new("UICorner", topStrip); tsC.CornerRadius = UDim.new(1,0)
+    tsC.CornerRadius = UDim.new(1,0)
+fC.CornerRadius  = UDim.new(0,12)
+tabsCorner.CornerRadius = UDim.new(0,10)
+rpC.CornerRadius = UDim.new(1,0)
 
     local function makeDot(color, x)
         local b = Instance.new("TextButton")
