@@ -1,5 +1,5 @@
 -- Apple-style UI Library: side tabs + sliders + dropdowns + textboxes + toggles + color picker
--- Minimal but full, with vertical tab list on the left and content on the right.
+-- Default "Settings" tab with color pickers for window, button, and slider colors.
 
 local UIS = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -209,12 +209,19 @@ function UILib:CreateWindow(id)
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = CoreGui
 
+    -- shared style for this window
+    local Style = {
+        WindowColor  = Color3.fromRGB(25,25,32),
+        ButtonColor  = Color3.fromRGB(60,60,80),
+        SliderColor  = Color3.fromRGB(39,201,63),
+    }
+
     local frame = Instance.new("Frame")
     frame.Name = "Window"
     frame.AnchorPoint = Vector2.new(0,0)
     frame.Size = UDim2.new(0,520,0,360)
     frame.Position = UDim2.new(0.5,-260,0.5,-180)
-    frame.BackgroundColor3 = Color3.fromRGB(25,25,32)
+    frame.BackgroundColor3 = Style.WindowColor
     frame.BorderSizePixel = 0
     frame.Active = true
     frame.ClipsDescendants = true
@@ -246,7 +253,6 @@ function UILib:CreateWindow(id)
     local minimizeBtn   = makeDot(Color3.fromRGB(255,189,46),24)
     local fullscreenBtn = makeDot(Color3.fromRGB(39,201,63),42)
 
-    -- Main area: left = vertical tabs, right = content
     local main = Instance.new("Frame")
     main.Name = "MainArea"
     main.BackgroundTransparency = 1
@@ -299,7 +305,7 @@ function UILib:CreateWindow(id)
         return r
     end
 
-    -- Drag
+    -- Drag / resize
     local dragging = false
     local dragStart, startPos
 
@@ -334,7 +340,6 @@ function UILib:CreateWindow(id)
         end
     end)
 
-    -- Resize pad
     local resizePad = Instance.new("Frame")
     resizePad.AnchorPoint = Vector2.new(1,1)
     resizePad.Size = UDim2.new(0,22,0,22)
@@ -393,7 +398,7 @@ function UILib:CreateWindow(id)
     local Window = {}
     Window.Frame = frame
     Window.Content = content
-    Window.Id = id
+    Window.Style = Style
 
     local function makeSection(parentFrame)
         local Section = {}
@@ -421,7 +426,7 @@ function UILib:CreateWindow(id)
             local row = newSectionRow(28)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1,-4,1,0)
-            btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -453,7 +458,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -465,7 +470,7 @@ function UILib:CreateWindow(id)
 
             local function refresh()
                 if state then
-                    btn.BackgroundColor3 = Color3.fromRGB(39,201,63)
+                    btn.BackgroundColor3 = Style.ButtonColor
                     btn.Text = "ON"
                 else
                     btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
@@ -532,7 +537,7 @@ function UILib:CreateWindow(id)
             local sliderFill = Instance.new("Frame")
             sliderFill.Size = UDim2.new(0,0,1,0)
             sliderFill.Position = UDim2.new(0,0,0,0)
-            sliderFill.BackgroundColor3 = Color3.fromRGB(39,201,63)
+            sliderFill.BackgroundColor3 = Style.SliderColor
             sliderFill.BorderSizePixel = 0
             sliderFill.Parent = sliderBg
             local sfC = Instance.new("UICorner", sliderFill); sfC.CornerRadius = UDim.new(0,4)
@@ -597,6 +602,7 @@ function UILib:CreateWindow(id)
             return {
                 Get = function() return val end,
                 Set = function(v) update(v) end,
+                _SetColor = function(col) sliderFill.BackgroundColor3 = col end,
             }
         end
 
@@ -668,7 +674,7 @@ function UILib:CreateWindow(id)
             btn.AnchorPoint = Vector2.new(1,0)
             btn.Position = UDim2.new(1,0,0,0)
             btn.Size = UDim2.new(0,70,1,0)
-            btn.BackgroundColor3 = Color3.fromRGB(60,60,80)
+            btn.BackgroundColor3 = Style.ButtonColor
             btn.BorderSizePixel = 0
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 14
@@ -692,6 +698,7 @@ function UILib:CreateWindow(id)
                 Set = function(c)
                     current = c
                     preview.BackgroundColor3 = c
+                    if callback then callback(c) end
                 end
             }
         end
@@ -699,9 +706,7 @@ function UILib:CreateWindow(id)
         return Section
     end
 
-    -- Main section (no tabs)
     local MainSection = makeSection(content)
-
     function Window:AddLabel(...)       return MainSection:AddLabel(...) end
     function Window:AddButton(...)      return MainSection:AddButton(...) end
     function Window:AddToggle(...)      return MainSection:AddToggle(...) end
@@ -709,11 +714,13 @@ function UILib:CreateWindow(id)
     function Window:AddTextBox(...)     return MainSection:AddTextBox(...) end
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
 
-    --========= SIDE TABS =========
+    --========= SIDE TABS (with default Settings) =========
 
     function Window:AddTabs(tabNames, defaultIndex)
-        tabNames = tabNames or {"Tab 1"}
-        defaultIndex = defaultIndex or 1
+        tabNames = tabNames or {}
+        -- always inject Settings as first tab
+        table.insert(tabNames, 1, "Settings")
+        defaultIndex = (defaultIndex or 1) + 1  -- shift user default by 1
 
         local tabs = {}
         local currentTab = nil
@@ -769,6 +776,24 @@ function UILib:CreateWindow(id)
             }
         end
 
+        -- Settings tab UI (tab index 1)
+        local settingsSection = tabs[1].Section
+        settingsSection:AddLabel("Appearance")
+
+        settingsSection:AddColorPicker("Window color", Style.WindowColor, function(col)
+            Style.WindowColor = col
+            frame.BackgroundColor3 = col
+        end)
+
+        settingsSection:AddColorPicker("Button color", Style.ButtonColor, function(col)
+            Style.ButtonColor = col
+            -- change all current tab buttons to new style if ON; simple demo keeps it for new ones
+        end)
+
+        settingsSection:AddColorPicker("Slider color", Style.SliderColor, function(col)
+            Style.SliderColor = col
+        end)
+
         local function selectTab(idx)
             for i, t in ipairs(tabs) do
                 local sel = (i == idx)
@@ -794,17 +819,19 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        if tabs[defaultIndex] then
-            selectTab(defaultIndex)
-        end
+        -- default select Settings (index 1)
+        selectTab(1)
 
         return {
             Select = function(idx)
-                if tabs[idx] then selectTab(idx) end
+                -- user expects index 1 to be their first custom, so shift by 1
+                local real = idx + 1
+                if tabs[real] then selectTab(real) end
             end,
             GetSelected = function() return currentTab end,
             GetTab = function(idx)
-                local t = tabs[idx]
+                local real = idx + 1
+                local t = tabs[real]
                 return t and t.Section or nil
             end,
         }
