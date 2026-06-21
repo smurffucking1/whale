@@ -1,13 +1,12 @@
 -- Apple-style UI Library with:
--- - Side tabs (vertical)
--- - Sliders, toggles, textboxes, buttons, color pickers
--- - Built-in "Settings" tab
--- - Theme system (Dark, OLED) + custom themes, saved to APPLE_REC/themes.json
+-- - Side tabs (vertical) + auto "Settings" tab
+-- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
+-- - Theme system (Dark, OLED) + custom themes
 -- - Autosave of:
---     * Selected theme name (autoload)
---     * Theme colors (window, button, slider)
---     * All control values (slider, toggle, textbox, dropdown, color picker)
---   to APPLE_REC/config.json
+--     * Selected theme & theme colors
+--     * All control values (sliders, toggles, textboxes, dropdowns, color pickers)
+-- - Live recolor of existing sliders & tab buttons when colors/themes change
+-- - Fixed fullscreen button
 
 local UIS = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -53,7 +52,7 @@ local CurrentThemeName = "Dark"
 local Config = {
     ThemeName = CurrentThemeName,
     Themes = {},
-    Windows = {}, -- per-window persisted controls
+    Windows = {},
 }
 
 local function serializeColor(c)
@@ -365,7 +364,6 @@ function UILib:CreateWindow(id)
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = CoreGui
 
-    -- active theme colors for this window
     local Theme = Themes[CurrentThemeName] or Themes.Dark
     local Style = {
         WindowColor = Theme.WindowColor,
@@ -436,9 +434,9 @@ function UILib:CreateWindow(id)
     tabsLayout.Parent = tabsPanel
 
     local tabsPad = Instance.new("UIPadding")
-    tabsPad.PaddingTop = UDim.new(0,6)
-    tabsPad.PaddingLeft = UDim.new(0,6)
-    tabsPad.PaddingRight = UDim.new(0,6)
+    tabsPad.PaddingTop = UDim2.new(0,6)
+    tabsPad.PaddingLeft = UDim2.new(0,6)
+    tabsPad.PaddingRight = UDim2.new(0,6)
     tabsPad.Parent = tabsPanel
 
     local content = Instance.new("Frame")
@@ -464,7 +462,39 @@ function UILib:CreateWindow(id)
         return r
     end
 
-    -- Drag & resize
+    -- registries for recolor
+    local sliderFills = {}
+    local tabButtons = {}
+    local currentTabIndex = nil
+
+    local function refreshSliders()
+        for _, fill in ipairs(sliderFills) do
+            if fill and fill.Parent then
+                fill.BackgroundColor3 = Style.SliderColor
+            end
+        end
+    end
+
+    local function refreshTabButtons()
+        for idx, t in ipairs(tabButtons) do
+            if t.Button then
+                local sel = (idx == currentTabIndex)
+                if sel then
+                    t.Button.BackgroundColor3 = Style.ButtonColor
+                    t.Button.Font = Enum.Font.GothamBold
+                    t.Button.TextColor3 = Color3.fromRGB(15,15,20)
+                    if t.Stroke then t.Stroke.Transparency = 0.1 end
+                else
+                    t.Button.BackgroundColor3 = Color3.fromRGB(40,40,50)
+                    t.Button.Font = Enum.Font.Gotham
+                    t.Button.TextColor3 = Color3.fromRGB(230,230,240)
+                    if t.Stroke then t.Stroke.Transparency = 0.7 end
+                end
+            end
+        end
+    end
+
+    -- drag & resize + fullscreen
     local dragging = false
     local dragStart, startPos
 
@@ -545,6 +575,26 @@ function UILib:CreateWindow(id)
     closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
     minimizeBtn.MouseButton1Click:Connect(function() frame.Visible = not frame.Visible end)
 
+    -- fullscreen toggle
+    local isFullscreen = false
+    local savedSize = frame.Size
+    local savedPos  = frame.Position
+
+    fullscreenBtn.MouseButton1Click:Connect(function()
+        if not isFullscreen then
+            savedSize = frame.Size
+            savedPos  = frame.Position
+            local vpSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+            frame.Size = UDim2.new(0, math.floor(vpSize.X*0.8), 0, math.floor(vpSize.Y*0.8))
+            frame.Position = UDim2.new(0.5,-frame.Size.X.Offset/2,0.5,-frame.Size.Y.Offset/2)
+            isFullscreen = true
+        else
+            frame.Size = savedSize
+            frame.Position = savedPos
+            isFullscreen = false
+        end
+    end)
+
     UIS.InputBegan:Connect(function(input,gp)
         if gp then return end
         if input.KeyCode == Enum.KeyCode.RightControl then
@@ -565,9 +615,7 @@ function UILib:CreateWindow(id)
         Section.Parent = parentFrame
         Section.SectionExtra = sectionExtra
 
-        local function newSectionRow(h)
-            return newRow(h, parentFrame)
-        end
+        local function newSectionRow(h) return newRow(h, parentFrame) end
 
         function Section:AddLabel(text)
             local row = newSectionRow(20)
@@ -713,6 +761,8 @@ function UILib:CreateWindow(id)
             sliderFill.Parent = sliderBg
             local sfC = Instance.new("UICorner", sliderFill); sfC.CornerRadius = UDim.new(0,4)
 
+            table.insert(sliderFills, sliderFill)
+
             local sliderDot = Instance.new("Frame")
             sliderDot.Size = UDim2.new(0,12,0,12)
             sliderDot.AnchorPoint = Vector2.new(0.5,0.5)
@@ -774,7 +824,6 @@ function UILib:CreateWindow(id)
             return {
                 Get = function() return val end,
                 Set = function(v) update(v) end,
-                _SetColor = function(col) sliderFill.BackgroundColor3 = col end,
             }
         end
 
@@ -888,7 +937,6 @@ function UILib:CreateWindow(id)
                 end)
             end)
 
-            -- initial save
             persist(current)
 
             return {
@@ -1036,13 +1084,10 @@ function UILib:CreateWindow(id)
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
-        -- inject Settings tab at index 1
         table.insert(tabNames, 1, "Settings")
         defaultIndex = (defaultIndex or 1) + 1
 
         local tabs = {}
-        local currentTab = nil
-
         local pagesHolder = Instance.new("Frame")
         pagesHolder.Name = "PagesHolder"
         pagesHolder.Size = UDim2.new(1,0,1,0)
@@ -1092,21 +1137,21 @@ function UILib:CreateWindow(id)
                 Stroke = stroke,
                 Name = name,
             }
+
+            tabButtons[i] = {
+                Button = btn,
+                Stroke = stroke,
+            }
         end
 
-        -- Settings tab UI (index 1)
+        -- Settings tab content
         local settingsSection = tabs[1].Section
         settingsSection:AddLabel("Theme")
 
-        -- Theme dropdown
         local themeNames = {}
         for name,_ in pairs(Themes) do table.insert(themeNames, name) end
         table.sort(themeNames)
-
-        -- ensure current theme is valid
-        if not Themes[CurrentThemeName] then
-            CurrentThemeName = "Dark"
-        end
+        if not Themes[CurrentThemeName] then CurrentThemeName = "Dark" end
 
         local currentThemeIdx = 1
         for i,name in ipairs(themeNames) do
@@ -1121,6 +1166,8 @@ function UILib:CreateWindow(id)
                 Style.ButtonColor = t.ButtonColor
                 Style.SliderColor = t.SliderColor
                 frame.BackgroundColor3 = Style.WindowColor
+                refreshSliders()
+                refreshTabButtons()
                 saveThemes()
                 saveConfig()
             end
@@ -1138,17 +1185,21 @@ function UILib:CreateWindow(id)
         settingsSection:AddColorPicker("Button color", Style.ButtonColor, function(col)
             Style.ButtonColor = col
             Themes[CurrentThemeName].ButtonColor = col
+            refreshTabButtons()
             saveThemes()
         end)
 
         settingsSection:AddColorPicker("Slider color", Style.SliderColor, function(col)
             Style.SliderColor = col
             Themes[CurrentThemeName].SliderColor = col
+            refreshSliders()
             saveThemes()
         end)
 
-        -- Save theme as...
-        local saveThemeRow = tabs[1].Section:AddTextBox("Save theme as", CurrentThemeName, function(name)
+        local nameBox = settingsSection:AddTextBox("Theme name", CurrentThemeName, function() end)
+
+        settingsSection:AddButton("Save theme", function()
+            local name = nameBox.Get()
             name = name:gsub("^%s+",""):gsub("%s+$","")
             if name == "" then return end
             Themes[name] = {
@@ -1156,8 +1207,9 @@ function UILib:CreateWindow(id)
                 ButtonColor = Style.ButtonColor,
                 SliderColor = Style.SliderColor,
             }
+            CurrentThemeName = name
             saveThemes()
-            -- rebuild dropdown options
+            saveConfig()
             themeNames = {}
             for n,_ in pairs(Themes) do table.insert(themeNames, n) end
             table.sort(themeNames)
@@ -1165,21 +1217,10 @@ function UILib:CreateWindow(id)
         end)
 
         local function selectTab(idx)
+            currentTabIndex = idx
+            refreshTabButtons()
             for i, t in ipairs(tabs) do
-                local sel = (i == idx)
-                t.Page.Visible = sel
-                if sel then
-                    t.Button.BackgroundColor3 = Color3.fromRGB(39,201,63)
-                    t.Button.Font = Enum.Font.GothamBold
-                    t.Button.TextColor3 = Color3.fromRGB(15,15,20)
-                    t.Stroke.Transparency = 0.1
-                    currentTab = t
-                else
-                    t.Button.BackgroundColor3 = Color3.fromRGB(40,40,50)
-                    t.Button.Font = Enum.Font.Gotham
-                    t.Button.TextColor3 = Color3.fromRGB(230,230,240)
-                    t.Stroke.Transparency = 0.7
-                end
+                t.Page.Visible = (i == idx)
             end
         end
 
@@ -1189,7 +1230,7 @@ function UILib:CreateWindow(id)
             end)
         end
 
-        -- default: Settings tab
+        -- default to Settings tab
         selectTab(1)
 
         return {
@@ -1197,7 +1238,7 @@ function UILib:CreateWindow(id)
                 local real = idx + 1
                 if tabs[real] then selectTab(real) end
             end,
-            GetSelected = function() return currentTab end,
+            GetSelected = function() return tabs[currentTabIndex] end,
             GetTab = function(idx)
                 local real = idx + 1
                 local t = tabs[real]
