@@ -1,5 +1,5 @@
 -- Apple-style UI Library
--- - Side tabs (vertical) with Settings shown last
+-- - Side tabs (vertical) with auto "Settings" tab
 -- - Sliders, toggles, textboxes, buttons, dropdowns, color pickers
 -- - Themes (Dark, OLED) + custom themes saved to APPLE_REC/themes.json
 -- - Autosave of all control values + active theme to APPLE_REC/config.json
@@ -7,7 +7,7 @@
 -- - Dropdowns support SetOptions/Rebuild
 -- - Sliders have a text input that controls the slider
 -- - Fixed fullscreen button
--- - GetTab(1..n) maps to your tabs, Settings is last internal tab
+-- - GetTab(1..n) maps to your tabs, Settings is internal index 1
 
 local UIS         = game:GetService("UserInputService")
 local CoreGui     = game:GetService("CoreGui")
@@ -390,10 +390,7 @@ function UILib:CreateWindow(id)
     topStrip.Size = UDim2.new(1,-16,0,20)
     topStrip.Position = UDim2.new(0,8,0,4)
     topStrip.Parent = frame
-    tsC.CornerRadius = UDim.new(1,0)
-fC.CornerRadius  = UDim.new(0,12)
-tabsCorner.CornerRadius = UDim.new(0,10)
-rpC.CornerRadius = UDim.new(1,0)
+    local tsC = Instance.new("UICorner", topStrip); tsC.CornerRadius = UDim.new(1,0)
 
     local function makeDot(color, x)
         local b = Instance.new("TextButton")
@@ -432,13 +429,13 @@ rpC.CornerRadius = UDim.new(1,0)
 
     local tabsLayout = Instance.new("UIListLayout")
     tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabsLayout.Padding = UDim2.new(0,4)
+    tabsLayout.Padding = UDim.new(0,4)
     tabsLayout.Parent = tabsPanel
 
     local tabsPad = Instance.new("UIPadding")
-    tabsPad.PaddingTop = UDim2.new(0,6)
-    tabsPad.PaddingLeft = UDim2.new(0,6)
-    tabsPad.PaddingRight = UDim2.new(0,6)
+    tabsPad.PaddingTop = UDim.new(0,6)
+    tabsPad.PaddingLeft = UDim.new(0,6)
+    tabsPad.PaddingRight = UDim.new(0,6)
     tabsPad.Parent = tabsPanel
 
     local content = Instance.new("Frame")
@@ -451,7 +448,7 @@ rpC.CornerRadius = UDim.new(1,0)
 
     local contentLayout = Instance.new("UIListLayout")
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    contentLayout.Padding = UDim2.new(0,6)
+    contentLayout.Padding = UDim.new(0,6)
     contentLayout.Parent = content
 
     local function newRow(h, parent)
@@ -1041,7 +1038,7 @@ rpC.CornerRadius = UDim.new(1,0)
 
             local ddLayout = Instance.new("UIListLayout")
             ddLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            ddLayout.Padding = UDim2.new(0,2)
+            ddLayout.Padding = UDim.new(0,2)
             ddLayout.Parent = dd
 
             local selectedIndex = defIndex
@@ -1136,20 +1133,16 @@ rpC.CornerRadius = UDim.new(1,0)
     function Window:AddColorPicker(...) return MainSection:AddColorPicker(...) end
     function Window:AddDropdown(...)    return MainSection:AddDropdown(...) end
 
-    --========= SIDE TABS WITH SETTINGS (LAST) & THEMES =========
+    --========= SIDE TABS WITH SETTINGS & THEMES =========
 
     function Window:AddTabs(tabNames, defaultIndex)
         tabNames = tabNames or {}
+        -- insert Settings at the front internally
+        table.insert(tabNames, 1, "Settings")
+
+        -- caller: 1=Player,2=Visuals,3=Misc
         defaultIndex = defaultIndex or 1
-
-        -- internalNames: your tabs first, then Settings last
-        local internalNames = {}
-        for i, name in ipairs(tabNames) do
-            internalNames[#internalNames+1] = name
-        end
-        internalNames[#internalNames+1] = "Settings"
-
-        local internalDefault = defaultIndex
+        local internalDefault = defaultIndex + 1
 
         local tabs = {}
         local pagesHolder = Instance.new("Frame")
@@ -1158,7 +1151,7 @@ rpC.CornerRadius = UDim.new(1,0)
         pagesHolder.BackgroundTransparency = 1
         pagesHolder.Parent = content
 
-        for i, name in ipairs(internalNames) do
+        for i, name in ipairs(tabNames) do
             local btn = Instance.new("TextButton")
             btn.Name = "TabButton_"..name
             btn.Size = UDim2.new(1,0,0,26)
@@ -1189,7 +1182,7 @@ rpC.CornerRadius = UDim.new(1,0)
 
             local pageLayout = Instance.new("UIListLayout")
             pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            pageLayout.Padding = UDim2.new(0,6)
+            pageLayout.Padding = UDim.new(0,6)
             pageLayout.Parent = page
 
             local section = makeSection(page, name)
@@ -1208,9 +1201,8 @@ rpC.CornerRadius = UDim.new(1,0)
             }
         end
 
-        -- Settings tab is last internal index
-        local settingsIndex = #internalNames
-        local settingsSection = tabs[settingsIndex].Section
+        -- Settings tab (internal index 1)
+        local settingsSection = tabs[1].Section
         settingsSection:AddLabel("Theme")
 
         local themeNames = {}
@@ -1303,21 +1295,17 @@ rpC.CornerRadius = UDim.new(1,0)
             end)
         end
 
-        -- show your requested default; if invalid, fall back to first tab
+        -- show Settings, then jump to requested default
+        selectTab(1)
         if tabs[internalDefault] then
             selectTab(internalDefault)
-        else
-            selectTab(1)
         end
 
         return {
-            -- external indices: 1..#tabNames (no Settings)
+            -- your indices: 1=Player,2=Visuals,3=Misc
             Select = function(idx)
-                idx = tonumber(idx)
-                if not idx then return end
-                if tabs[idx] then
-                    selectTab(idx)
-                end
+                local internal = idx + 1
+                if tabs[internal] then selectTab(internal) end
             end,
 
             GetSelected = function()
@@ -1325,10 +1313,8 @@ rpC.CornerRadius = UDim.new(1,0)
             end,
 
             GetTab = function(idx)
-                idx = tonumber(idx)
-                if not idx then return nil end
-                if idx < 1 or idx > #tabNames then return nil end
-                local t = tabs[idx]
+                local internal = idx + 1
+                local t = tabs[internal]
                 return t and t.Section or nil
             end,
         }
