@@ -1,0 +1,2399 @@
+--[[
+    GOOPY UI — Full Rewrite
+
+    Features:
+    - Rounded card interface
+    - Main GUI drag strip restored
+    - Bottom-right resize pad
+    - Main / Settings / Changelog side tabs
+    - Top-right minimize + bottom-left reopen button
+    - Destroy GUI button
+    - Fullscreen + edge-padding setting
+    - Global UI opacity that affects the main frame, cards, sidebar,
+      tabs, headers, controls, and colour-picker modal
+    - Advanced HSV colour picker:
+        Saturation/value drag panel
+        Hue slider
+        Alpha slider
+        Handles/thumbs
+        Hex preview
+    - Per-theme target eyedropper buttons
+    - Config autosave to goopy/config.json when executor filesystem
+      functions are present
+
+    This is a client-side visual UI template.
+]]
+
+--// Services
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+
+--// Parent
+local GuiParent = gethui and gethui() or CoreGui
+
+--// Single instance cleanup
+local Existing = GuiParent:FindFirstChild("GoopyUI")
+if Existing then
+	Existing:Destroy()
+end
+
+--// File config
+local CONFIG_FOLDER = "goopy"
+local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
+
+local HasFileSystem =
+	type(isfolder) == "function"
+	and type(makefolder) == "function"
+	and type(isfile) == "function"
+	and type(readfile) == "function"
+	and type(writefile) == "function"
+
+local function deepCopy(Input)
+	local Output = {}
+
+	for Key, Value in pairs(Input) do
+		if type(Value) == "table" then
+			Output[Key] = deepCopy(Value)
+		else
+			Output[Key] = Value
+		end
+	end
+
+	return Output
+end
+
+local function colorToTable(Color)
+	return {
+		R = math.floor(Color.R * 255 + 0.5),
+		G = math.floor(Color.G * 255 + 0.5),
+		B = math.floor(Color.B * 255 + 0.5),
+	}
+end
+
+local function tableToColor(Data, Fallback)
+	if type(Data) ~= "table" then
+		return Fallback
+	end
+
+	if type(Data.R) ~= "number"
+		or type(Data.G) ~= "number"
+		or type(Data.B) ~= "number" then
+		return Fallback
+	end
+
+	return Color3.fromRGB(
+		math.clamp(Data.R, 0, 255),
+		math.clamp(Data.G, 0, 255),
+		math.clamp(Data.B, 0, 255)
+	)
+end
+
+local DefaultConfig = {
+	Position = {
+		XScale = 0.5,
+		XOffset = 0,
+		YScale = 0.5,
+		YOffset = 0,
+	},
+
+	Size = {
+		Width = 720,
+		Height = 475,
+	},
+
+	Fullscreen = false,
+	ScreenPadding = 24,
+
+	-- 0 = fully opaque
+	-- 0.85 = highly transparent
+	Opacity = 0.02,
+
+	Colors = {
+		Background = { R = 15, G = 15, B = 20 },
+		Card = { R = 25, G = 25, B = 33 },
+		Accent = { R = 148, G = 82, B = 255 },
+		Tab = { R = 35, G = 35, B = 45 },
+		Text = { R = 245, G = 243, B = 250 },
+	},
+}
+
+local Config = deepCopy(DefaultConfig)
+
+local function loadConfig()
+	if not HasFileSystem then
+		return
+	end
+
+	pcall(function()
+		if not isfolder(CONFIG_FOLDER) then
+			makefolder(CONFIG_FOLDER)
+		end
+
+		if not isfile(CONFIG_FILE) then
+			writefile(CONFIG_FILE, HttpService:JSONEncode(DefaultConfig))
+			return
+		end
+
+		local Decoded = HttpService:JSONDecode(readfile(CONFIG_FILE))
+
+		if type(Decoded) ~= "table" then
+			return
+		end
+
+		for Key, Value in pairs(Decoded) do
+			Config[Key] = Value
+		end
+
+		Config.Position = Config.Position or deepCopy(DefaultConfig.Position)
+		Config.Size = Config.Size or deepCopy(DefaultConfig.Size)
+		Config.Colors = Config.Colors or {}
+
+		for Key, Value in pairs(DefaultConfig.Colors) do
+			if type(Config.Colors[Key]) ~= "table" then
+				Config.Colors[Key] = Value
+			end
+		end
+	end)
+end
+
+local function saveConfig()
+	if not HasFileSystem then
+		return
+	end
+
+	pcall(function()
+		if not isfolder(CONFIG_FOLDER) then
+			makefolder(CONFIG_FOLDER)
+		end
+
+		writefile(CONFIG_FILE, HttpService:JSONEncode(Config))
+	end)
+end
+
+loadConfig()
+
+--// Theme
+local Theme = {
+	Background = tableToColor(
+		Config.Colors.Background,
+		Color3.fromRGB(15, 15, 20)
+	),
+
+	Card = tableToColor(
+		Config.Colors.Card,
+		Color3.fromRGB(25, 25, 33)
+	),
+
+	Accent = tableToColor(
+		Config.Colors.Accent,
+		Color3.fromRGB(148, 82, 255)
+	),
+
+	Tab = tableToColor(
+		Config.Colors.Tab,
+		Color3.fromRGB(35, 35, 45)
+	),
+
+	Text = tableToColor(
+		Config.Colors.Text,
+		Color3.fromRGB(245, 243, 250)
+	),
+
+	SubText = Color3.fromRGB(159, 155, 173),
+	Stroke = Color3.fromRGB(76, 72, 92),
+	White = Color3.fromRGB(255, 255, 255),
+	Danger = Color3.fromRGB(216, 70, 93),
+	DangerCard = Color3.fromRGB(43, 23, 31),
+}
+
+--// Tween presets
+local TweenPresets = {
+	Open = TweenInfo.new(
+		0.62,
+		Enum.EasingStyle.Quint,
+		Enum.EasingDirection.Out
+	),
+
+	Close = TweenInfo.new(
+		0.28,
+		Enum.EasingStyle.Quint,
+		Enum.EasingDirection.In
+	),
+
+	Hover = TweenInfo.new(
+		0.15,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	),
+
+	Page = TweenInfo.new(
+		0.18,
+		Enum.EasingStyle.Quint,
+		Enum.EasingDirection.Out
+	),
+}
+
+--// Utilities
+local function New(ClassName, Properties, Parent)
+	local Object = Instance.new(ClassName)
+
+	for Property, Value in pairs(Properties) do
+		Object[Property] = Value
+	end
+
+	Object.Parent = Parent
+
+	return Object
+end
+
+local function Tween(Object, TweenInfoValue, Properties)
+	local Animation = TweenService:Create(Object, TweenInfoValue, Properties)
+	Animation:Play()
+
+	return Animation
+end
+
+local function AddCorner(Parent, Radius)
+	return New("UICorner", {
+		CornerRadius = UDim.new(0, Radius),
+	}, Parent)
+end
+
+local function AddStroke(Parent, Color, Thickness, Transparency)
+	return New("UIStroke", {
+		Color = Color,
+		Thickness = Thickness or 1,
+		Transparency = Transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, Parent)
+end
+
+--// GUI
+local ScreenGui = New("ScreenGui", {
+	Name = "GoopyUI",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 999,
+}, GuiParent)
+
+--// Window state
+local WindowOpen = true
+local IsFullscreen = Config.Fullscreen == true
+
+local ScreenPadding = math.clamp(
+	tonumber(Config.ScreenPadding) or 24,
+	0,
+	100
+)
+
+local GlobalOpacity = math.clamp(
+	tonumber(Config.Opacity) or 0.02,
+	0,
+	0.85
+)
+
+local StartWidth = math.clamp(
+	tonumber(Config.Size.Width) or 720,
+	440,
+	1200
+)
+
+local StartHeight = math.clamp(
+	tonumber(Config.Size.Height) or 475,
+	330,
+	900
+)
+
+local StartPosition = UDim2.new(
+	tonumber(Config.Position.XScale) or 0.5,
+	tonumber(Config.Position.XOffset) or 0,
+	tonumber(Config.Position.YScale) or 0.5,
+	tonumber(Config.Position.YOffset) or 0
+)
+
+local LastPosition = StartPosition
+local LastSize = UDim2.fromOffset(StartWidth, StartHeight)
+
+local MIN_WIDTH = 440
+local MIN_HEIGHT = 330
+local MAX_WIDTH = 1200
+local MAX_HEIGHT = 900
+
+--// Opacity registry
+-- Every visual object that should fade with the global opacity is registered here.
+-- Opacity affects only background layers; text remains readable.
+local OpacityBindings = {}
+
+local function bindOpacity(Object, PropertyName, BaseTransparency)
+	table.insert(OpacityBindings, {
+		Object = Object,
+		Property = PropertyName,
+		BaseTransparency = BaseTransparency or 0,
+	})
+end
+
+local function applyGlobalOpacity()
+	for Index = #OpacityBindings, 1, -1 do
+		local Binding = OpacityBindings[Index]
+
+		if not Binding.Object or not Binding.Object.Parent then
+			table.remove(OpacityBindings, Index)
+		else
+			local FinalTransparency = Binding.BaseTransparency
+				+ ((1 - Binding.BaseTransparency) * GlobalOpacity)
+
+			pcall(function()
+				Binding.Object[Binding.Property] = math.clamp(
+					FinalTransparency,
+					0,
+					1
+				)
+			end)
+		end
+	end
+end
+
+--// Theme registry
+local ThemeBindings = {
+	Background = {},
+	Card = {},
+	Accent = {},
+	Tab = {},
+	Text = {},
+}
+
+local function bindTheme(Object, PropertyName, ThemeKey)
+	table.insert(ThemeBindings[ThemeKey], {
+		Object = Object,
+		Property = PropertyName,
+	})
+end
+
+local function refreshThemeKey(ThemeKey)
+	local Bindings = ThemeBindings[ThemeKey]
+
+	for Index = #Bindings, 1, -1 do
+		local Binding = Bindings[Index]
+
+		if not Binding.Object or not Binding.Object.Parent then
+			table.remove(Bindings, Index)
+		else
+			pcall(function()
+				Binding.Object[Binding.Property] = Theme[ThemeKey]
+			end)
+		end
+	end
+end
+
+--// Main window
+local Main = New("Frame", {
+	Name = "Main",
+
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = StartPosition,
+	Size = UDim2.fromOffset(0, 0),
+
+	BackgroundColor3 = Theme.Background,
+	BorderSizePixel = 0,
+
+	ClipsDescendants = true,
+}, ScreenGui)
+
+AddCorner(Main, 18)
+AddStroke(Main, Theme.Stroke, 1, 0.25)
+
+bindTheme(Main, "BackgroundColor3", "Background")
+bindOpacity(Main, "BackgroundTransparency", 0)
+
+--// Reopen button
+local OpenButton = New("TextButton", {
+	Name = "OpenButton",
+
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 20, 1, -20),
+	Size = UDim2.fromOffset(48, 48),
+
+	BackgroundColor3 = Theme.Card,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "+",
+	TextColor3 = Theme.Text,
+	TextSize = 25,
+	Font = Enum.Font.GothamBold,
+
+	Visible = false,
+	ZIndex = 100,
+}, ScreenGui)
+
+AddCorner(OpenButton, 14)
+AddStroke(OpenButton, Theme.Stroke, 1, 0.20)
+
+bindTheme(OpenButton, "BackgroundColor3", "Card")
+bindTheme(OpenButton, "TextColor3", "Text")
+bindOpacity(OpenButton, "BackgroundTransparency", 0)
+
+--// Sidebar
+local Sidebar = New("Frame", {
+	Name = "Sidebar",
+	Position = UDim2.fromOffset(0, 0),
+	Size = UDim2.new(0, 142, 1, 0),
+
+	BackgroundColor3 = Theme.Card,
+	BorderSizePixel = 0,
+}, Main)
+
+AddCorner(Sidebar, 18)
+AddStroke(Sidebar, Theme.Stroke, 1, 0.38)
+
+bindTheme(Sidebar, "BackgroundColor3", "Card")
+bindOpacity(Sidebar, "BackgroundTransparency", 0)
+
+-- Covers right-side sidebar rounding, leaving the outer left rounded.
+local SidebarRightMask = New("Frame", {
+	Name = "SidebarRightMask",
+	Position = UDim2.new(1, -20, 0, 0),
+	Size = UDim2.fromOffset(20, 0),
+
+	BackgroundColor3 = Theme.Card,
+	BorderSizePixel = 0,
+}, Sidebar)
+
+SidebarRightMask.Size = UDim2.new(0, 20, 1, 0)
+
+bindTheme(SidebarRightMask, "BackgroundColor3", "Card")
+bindOpacity(SidebarRightMask, "BackgroundTransparency", 0)
+
+local SideDivider = New("Frame", {
+	Name = "SideDivider",
+	Position = UDim2.new(1, -1, 0, 18),
+	Size = UDim2.new(0, 1, 1, -36),
+
+	BackgroundColor3 = Theme.Stroke,
+	BorderSizePixel = 0,
+}, Sidebar)
+
+bindOpacity(SideDivider, "BackgroundTransparency", 0.45)
+
+local Brand = New("TextLabel", {
+	Name = "Brand",
+	Position = UDim2.fromOffset(18, 18),
+	Size = UDim2.new(1, -36, 0, 25),
+
+	BackgroundTransparency = 1,
+	Text = "goopy",
+	TextColor3 = Theme.Text,
+	TextSize = 20,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, Sidebar)
+
+local BrandSub = New("TextLabel", {
+	Name = "BrandSub",
+	Position = UDim2.fromOffset(19, 42),
+	Size = UDim2.new(1, -38, 0, 16),
+
+	BackgroundTransparency = 1,
+	Text = "interface base",
+	TextColor3 = Theme.SubText,
+	TextSize = 10,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, Sidebar)
+
+bindTheme(Brand, "TextColor3", "Text")
+
+--// Only this strip drags the GUI
+local DragStrip = New("TextButton", {
+	Name = "DragStrip",
+	Position = UDim2.fromOffset(18, 67),
+	Size = UDim2.new(1, -36, 0, 8),
+
+	BackgroundColor3 = Theme.Tab,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+}, Sidebar)
+
+AddCorner(DragStrip, 10)
+
+bindTheme(DragStrip, "BackgroundColor3", "Tab")
+bindOpacity(DragStrip, "BackgroundTransparency", 0.08)
+
+local TabScroll = New("ScrollingFrame", {
+	Name = "TabScroll",
+	Position = UDim2.fromOffset(11, 91),
+	Size = UDim2.new(1, -22, 1, -108),
+
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+
+	CanvasSize = UDim2.fromOffset(0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+
+	ScrollBarThickness = 3,
+	ScrollBarImageColor3 = Theme.Accent,
+	ScrollBarImageTransparency = 0.30,
+}, Sidebar)
+
+New("UIListLayout", {
+	Padding = UDim.new(0, 8),
+	FillDirection = Enum.FillDirection.Vertical,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	VerticalAlignment = Enum.VerticalAlignment.Top,
+}, TabScroll)
+
+--// Right side
+local RightArea = New("Frame", {
+	Name = "RightArea",
+	Position = UDim2.new(0, 142, 0, 0),
+	Size = UDim2.new(1, -142, 1, 0),
+
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+}, Main)
+
+local Header = New("Frame", {
+	Name = "Header",
+	Size = UDim2.new(1, 0, 0, 75),
+
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+}, RightArea)
+
+local PageTitle = New("TextLabel", {
+	Name = "PageTitle",
+	Position = UDim2.fromOffset(25, 19),
+	Size = UDim2.new(1, -150, 0, 24),
+
+	BackgroundTransparency = 1,
+	Text = "Main",
+	TextColor3 = Theme.Text,
+	TextSize = 18,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, Header)
+
+local PageSubtitle = New("TextLabel", {
+	Name = "PageSubtitle",
+	Position = UDim2.fromOffset(25, 43),
+	Size = UDim2.new(1, -150, 0, 17),
+
+	BackgroundTransparency = 1,
+	Text = "Starter interface controls",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, Header)
+
+bindTheme(PageTitle, "TextColor3", "Text")
+
+--// Top-right minimize button
+local MinimizeButton = New("TextButton", {
+	Name = "MinimizeButton",
+
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -20, 0, 18),
+	Size = UDim2.fromOffset(34, 31),
+
+	BackgroundColor3 = Theme.Tab,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "—",
+	TextColor3 = Theme.Text,
+	TextSize = 16,
+	Font = Enum.Font.GothamBold,
+}, Header)
+
+AddCorner(MinimizeButton, 10)
+AddStroke(MinimizeButton, Theme.White, 1, 0.92)
+
+bindTheme(MinimizeButton, "BackgroundColor3", "Tab")
+bindTheme(MinimizeButton, "TextColor3", "Text")
+bindOpacity(MinimizeButton, "BackgroundTransparency", 0)
+
+local HeaderDivider = New("Frame", {
+	Name = "HeaderDivider",
+	Position = UDim2.new(0, 20, 1, -1),
+	Size = UDim2.new(1, -40, 0, 1),
+
+	BackgroundColor3 = Theme.Stroke,
+	BorderSizePixel = 0,
+}, Header)
+
+bindOpacity(HeaderDivider, "BackgroundTransparency", 0.42)
+
+local Pages = New("Frame", {
+	Name = "Pages",
+	Position = UDim2.fromOffset(20, 91),
+	Size = UDim2.new(1, -40, 1, -111),
+
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+}, RightArea)
+
+--// Resize pad
+local ResizePad = New("TextButton", {
+	Name = "ResizePad",
+
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -12, 1, -12),
+	Size = UDim2.fromOffset(25, 25),
+
+	BackgroundColor3 = Theme.Tab,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+	ZIndex = 60,
+}, Main)
+
+AddCorner(ResizePad, 8)
+AddStroke(ResizePad, Theme.Stroke, 1, 0.35)
+
+bindTheme(ResizePad, "BackgroundColor3", "Tab")
+bindOpacity(ResizePad, "BackgroundTransparency", 0)
+
+for Index = 1, 3 do
+	local ResizeLine = New("Frame", {
+		Name = "ResizeLine" .. Index,
+
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(11 + (Index * 3), 18 - (Index * 3)),
+		Size = UDim2.fromOffset(8, 2),
+
+		Rotation = -45,
+		BackgroundColor3 = Theme.SubText,
+		BorderSizePixel = 0,
+		ZIndex = 61,
+	}, ResizePad)
+
+	bindOpacity(ResizeLine, "BackgroundTransparency", 0.20)
+end
+
+--// Card helper
+local function CreateCard(Parent, Height)
+	local Card = New("Frame", {
+		Size = UDim2.new(1, 0, 0, Height),
+
+		BackgroundColor3 = Theme.Card,
+		BorderSizePixel = 0,
+	}, Parent)
+
+	AddCorner(Card, 13)
+	AddStroke(Card, Theme.Stroke, 1, 0.45)
+
+	bindTheme(Card, "BackgroundColor3", "Card")
+	bindOpacity(Card, "BackgroundTransparency", 0)
+
+	return Card
+end
+
+--// Button helper
+local function CreateButton(Parent, Text, Position, Size, BackgroundColor, ThemeKey)
+	local Button = New("TextButton", {
+		Name = Text:gsub("%s+", ""),
+		Position = Position,
+		Size = Size,
+
+		BackgroundColor3 = BackgroundColor,
+		BorderSizePixel = 0,
+
+		AutoButtonColor = false,
+		Text = Text,
+		TextColor3 = Theme.Text,
+		TextSize = 12,
+		Font = Enum.Font.GothamMedium,
+	}, Parent)
+
+	AddCorner(Button, 10)
+	AddStroke(Button, Theme.White, 1, 0.92)
+
+	bindTheme(Button, "TextColor3", "Text")
+	bindOpacity(Button, "BackgroundTransparency", 0)
+
+	if ThemeKey then
+		bindTheme(Button, "BackgroundColor3", ThemeKey)
+	end
+
+	return Button
+end
+
+--// Pages and tabs
+local PagesByName = {}
+local TabsByName = {}
+
+local function CreatePage(Name)
+	local Page = New("ScrollingFrame", {
+		Name = Name .. "Page",
+		Size = UDim2.fromScale(1, 1),
+
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+
+		Visible = false,
+
+		CanvasSize = UDim2.fromOffset(0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = Theme.Accent,
+		ScrollBarImageTransparency = 0.30,
+	}, Pages)
+
+	New("UIListLayout", {
+		Padding = UDim.new(0, 12),
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Top,
+	}, Page)
+
+	New("UIPadding", {
+		PaddingBottom = UDim.new(0, 12),
+	}, Page)
+
+	PagesByName[Name] = Page
+
+	return Page
+end
+
+local function CreateSideTab(Name, Icon, Subtitle)
+	local Tab = New("TextButton", {
+		Name = Name .. "Tab",
+		Size = UDim2.new(1, 0, 0, 43),
+
+		BackgroundColor3 = Theme.Tab,
+		BorderSizePixel = 0,
+
+		AutoButtonColor = false,
+		Text = "",
+	}, TabScroll)
+
+	AddCorner(Tab, 10)
+
+	bindTheme(Tab, "BackgroundColor3", "Tab")
+	bindOpacity(Tab, "BackgroundTransparency", 0)
+
+	local IconLabel = New("TextLabel", {
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.fromOffset(26, 43),
+
+		BackgroundTransparency = 1,
+		Text = Icon,
+		TextColor3 = Theme.Text,
+		TextSize = 16,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	}, Tab)
+
+	local TabText = New("TextLabel", {
+		Position = UDim2.fromOffset(40, 6),
+		Size = UDim2.new(1, -47, 0, 16),
+
+		BackgroundTransparency = 1,
+		Text = Name,
+		TextColor3 = Theme.Text,
+		TextSize = 12,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, Tab)
+
+	local SubText = New("TextLabel", {
+		Position = UDim2.fromOffset(41, 22),
+		Size = UDim2.new(1, -48, 0, 13),
+
+		BackgroundTransparency = 1,
+		Text = Subtitle,
+		TextColor3 = Theme.SubText,
+		TextSize = 9,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, Tab)
+
+	bindTheme(IconLabel, "TextColor3", "Text")
+	bindTheme(TabText, "TextColor3", "Text")
+
+	TabsByName[Name] = Tab
+
+	return Tab
+end
+
+--// Advanced HSV picker
+local ColorModal = New("Frame", {
+	Name = "ColorModal",
+
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(380, 405),
+
+	BackgroundColor3 = Theme.Card,
+	BorderSizePixel = 0,
+
+	Visible = false,
+	ZIndex = 200,
+}, ScreenGui)
+
+AddCorner(ColorModal, 16)
+AddStroke(ColorModal, Theme.Stroke, 1, 0.15)
+
+bindTheme(ColorModal, "BackgroundColor3", "Card")
+bindOpacity(ColorModal, "BackgroundTransparency", 0)
+
+local ModalDim = New("TextButton", {
+	Name = "ModalDim",
+	Size = UDim2.fromScale(1, 1),
+
+	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+	Visible = false,
+	ZIndex = 190,
+}, ScreenGui)
+
+bindOpacity(ModalDim, "BackgroundTransparency", 0.48)
+
+local ModalTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(20, 18),
+	Size = UDim2.new(1, -98, 0, 22),
+
+	BackgroundTransparency = 1,
+	Text = "Colour picker",
+	TextColor3 = Theme.Text,
+	TextSize = 16,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 201,
+}, ColorModal)
+
+bindTheme(ModalTitle, "TextColor3", "Text")
+
+local ColorPreview = New("Frame", {
+	Position = UDim2.new(1, -57, 0, 14),
+	Size = UDim2.fromOffset(34, 34),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(ColorPreview, 10)
+AddStroke(ColorPreview, Theme.White, 1, 0.65)
+
+local SaturationValuePanel = New("Frame", {
+	Name = "SaturationValuePanel",
+	Position = UDim2.fromOffset(20, 60),
+	Size = UDim2.fromOffset(220, 220),
+
+	BackgroundColor3 = Color3.fromHSV(0, 1, 1),
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(SaturationValuePanel, 12)
+AddStroke(SaturationValuePanel, Theme.White, 1, 0.75)
+
+local SaturationOverlay = New("Frame", {
+	Size = UDim2.fromScale(1, 1),
+
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BorderSizePixel = 0,
+	ZIndex = 202,
+}, SaturationValuePanel)
+
+New("UIGradient", {
+	Rotation = 0,
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+	}),
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 1),
+	}),
+}, SaturationOverlay)
+
+local ValueOverlay = New("Frame", {
+	Size = UDim2.fromScale(1, 1),
+
+	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+	BorderSizePixel = 0,
+	ZIndex = 203,
+}, SaturationValuePanel)
+
+New("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
+	}),
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	}),
+}, ValueOverlay)
+
+local SaturationValueThumb = New("TextButton", {
+	Name = "SaturationValueThumb",
+
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(1, 0),
+	Size = UDim2.fromOffset(15, 15),
+
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+	ZIndex = 205,
+}, SaturationValuePanel)
+
+AddCorner(SaturationValueThumb, 100)
+AddStroke(SaturationValueThumb, Color3.fromRGB(0, 0, 0), 2, 0.10)
+
+local HueTrack = New("Frame", {
+	Name = "HueTrack",
+	Position = UDim2.fromOffset(256, 60),
+	Size = UDim2.fromOffset(24, 220),
+
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(HueTrack, 10)
+AddStroke(HueTrack, Theme.White, 1, 0.75)
+
+New("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
+		ColorSequenceKeypoint.new(0.16, Color3.fromRGB(255, 0, 255)),
+		ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 0, 255)),
+		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0, 255, 255)),
+		ColorSequenceKeypoint.new(0.66, Color3.fromRGB(0, 255, 0)),
+		ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
+	}),
+}, HueTrack)
+
+local HueThumb = New("TextButton", {
+	Name = "HueThumb",
+
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0, 0),
+	Size = UDim2.new(1, 8, 0, 6),
+
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+	ZIndex = 205,
+}, HueTrack)
+
+AddCorner(HueThumb, 4)
+AddStroke(HueThumb, Color3.fromRGB(0, 0, 0), 1, 0.15)
+
+local AlphaTrack = New("Frame", {
+	Name = "AlphaTrack",
+	Position = UDim2.fromOffset(20, 301),
+	Size = UDim2.fromOffset(260, 20),
+
+	BackgroundColor3 = Color3.fromRGB(110, 110, 120),
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(AlphaTrack, 8)
+AddStroke(AlphaTrack, Theme.White, 1, 0.75)
+
+local AlphaColourLayer = New("Frame", {
+	Size = UDim2.fromScale(1, 1),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+	ZIndex = 202,
+}, AlphaTrack)
+
+New("UIGradient", {
+	Rotation = 0,
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+	}),
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	}),
+}, AlphaColourLayer)
+
+local AlphaThumb = New("TextButton", {
+	Name = "AlphaThumb",
+
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(1, 0, 0.5, 0),
+	Size = UDim2.fromOffset(7, 28),
+
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+	ZIndex = 205,
+}, AlphaTrack)
+
+AddCorner(AlphaThumb, 4)
+AddStroke(AlphaThumb, Color3.fromRGB(0, 0, 0), 1, 0.15)
+
+local AlphaLabel = New("TextLabel", {
+	Position = UDim2.new(1, -78, 0, 301),
+	Size = UDim2.fromOffset(58, 20),
+
+	BackgroundTransparency = 1,
+	Text = "100%",
+	TextColor3 = Theme.Text,
+	TextSize = 11,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	ZIndex = 201,
+}, ColorModal)
+
+local HexLabel = New("TextLabel", {
+	Position = UDim2.fromOffset(20, 334),
+	Size = UDim2.new(1, -40, 0, 18),
+
+	BackgroundTransparency = 1,
+	Text = "#FFFFFF",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.GothamMedium,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 201,
+}, ColorModal)
+
+local ApplyColourButton = New("TextButton", {
+	Position = UDim2.fromOffset(20, 361),
+	Size = UDim2.fromOffset(218, 30),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "Apply colour",
+	TextColor3 = Theme.Text,
+	TextSize = 12,
+	Font = Enum.Font.GothamSemibold,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(ApplyColourButton, 9)
+
+local CancelColourButton = New("TextButton", {
+	Position = UDim2.new(1, -110, 0, 361),
+	Size = UDim2.fromOffset(90, 30),
+
+	BackgroundColor3 = Theme.Tab,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "Cancel",
+	TextColor3 = Theme.Text,
+	TextSize = 12,
+	Font = Enum.Font.GothamMedium,
+	ZIndex = 201,
+}, ColorModal)
+
+AddCorner(CancelColourButton, 9)
+
+--// Picker input state
+local PickerHue = 0
+local PickerSaturation = 1
+local PickerValue = 1
+local PickerAlpha = 1
+
+local ActiveColorCallback = nil
+local ColorPickerOpen = false
+
+local PickingSaturationValue = false
+local PickingHue = false
+local PickingAlpha = false
+
+local function pickerColor()
+	return Color3.fromHSV(PickerHue, PickerSaturation, PickerValue)
+end
+
+local function refreshPickerVisuals()
+	local SelectedColor = pickerColor()
+
+	SaturationValuePanel.BackgroundColor3 = Color3.fromHSV(
+		PickerHue,
+		1,
+		1
+	)
+
+	AlphaColourLayer.BackgroundColor3 = SelectedColor
+	ColorPreview.BackgroundColor3 = SelectedColor
+	ColorPreview.BackgroundTransparency = 1 - PickerAlpha
+
+	SaturationValueThumb.Position = UDim2.new(
+		PickerSaturation,
+		0,
+		1 - PickerValue,
+		0
+	)
+
+	HueThumb.Position = UDim2.new(
+		0.5,
+		0,
+		PickerHue,
+		0
+	)
+
+	AlphaThumb.Position = UDim2.new(
+		PickerAlpha,
+		0,
+		0.5,
+		0
+	)
+
+	AlphaLabel.Text = tostring(
+		math.floor(PickerAlpha * 100 + 0.5)
+	) .. "%"
+
+	local R = math.floor(SelectedColor.R * 255 + 0.5)
+	local G = math.floor(SelectedColor.G * 255 + 0.5)
+	local B = math.floor(SelectedColor.B * 255 + 0.5)
+
+	HexLabel.Text = string.format("#%02X%02X%02X", R, G, B)
+end
+
+local function setSaturationValue(MousePosition)
+	local Position = SaturationValuePanel.AbsolutePosition
+	local Size = SaturationValuePanel.AbsoluteSize
+
+	if Size.X <= 0 or Size.Y <= 0 then
+		return
+	end
+
+	PickerSaturation = math.clamp(
+		(MousePosition.X - Position.X) / Size.X,
+		0,
+		1
+	)
+
+	PickerValue = 1 - math.clamp(
+		(MousePosition.Y - Position.Y) / Size.Y,
+		0,
+		1
+	)
+
+	refreshPickerVisuals()
+end
+
+local function setHue(MousePosition)
+	local Position = HueTrack.AbsolutePosition
+	local Size = HueTrack.AbsoluteSize
+
+	if Size.Y <= 0 then
+		return
+	end
+
+	PickerHue = math.clamp(
+		(MousePosition.Y - Position.Y) / Size.Y,
+		0,
+		1
+	)
+
+	refreshPickerVisuals()
+end
+
+local function setAlpha(MousePosition)
+	local Position = AlphaTrack.AbsolutePosition
+	local Size = AlphaTrack.AbsoluteSize
+
+	if Size.X <= 0 then
+		return
+	end
+
+	PickerAlpha = math.clamp(
+		(MousePosition.X - Position.X) / Size.X,
+		0,
+		1
+	)
+
+	refreshPickerVisuals()
+end
+
+local function closeColorPicker()
+	ActiveColorCallback = nil
+	ColorPickerOpen = false
+
+	PickingSaturationValue = false
+	PickingHue = false
+	PickingAlpha = false
+
+	ColorModal.Visible = false
+	ModalDim.Visible = false
+end
+
+local function openColorPicker(TitleText, StartingColor, StartingAlpha, Callback)
+	local Hue, Saturation, Value = StartingColor:ToHSV()
+
+	PickerHue = Hue
+	PickerSaturation = Saturation
+	PickerValue = Value
+	PickerAlpha = math.clamp(StartingAlpha or 1, 0, 1)
+
+	ActiveColorCallback = Callback
+	ColorPickerOpen = true
+
+	ModalTitle.Text = TitleText
+	refreshPickerVisuals()
+
+	ModalDim.Visible = true
+	ColorModal.Visible = true
+end
+
+SaturationValuePanel.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingSaturationValue = true
+		setSaturationValue(Input.Position)
+	end
+end)
+
+HueTrack.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingHue = true
+		setHue(Input.Position)
+	end
+end)
+
+AlphaTrack.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingAlpha = true
+		setAlpha(Input.Position)
+	end
+end)
+
+SaturationValueThumb.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingSaturationValue = true
+	end
+end)
+
+HueThumb.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingHue = true
+	end
+end)
+
+AlphaThumb.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		PickingAlpha = true
+	end
+end)
+
+ApplyColourButton.MouseButton1Click:Connect(function()
+	if ActiveColorCallback then
+		ActiveColorCallback(pickerColor(), PickerAlpha)
+	end
+
+	closeColorPicker()
+end)
+
+CancelColourButton.MouseButton1Click:Connect(closeColorPicker)
+ModalDim.MouseButton1Click:Connect(closeColorPicker)
+
+--// Create pages
+local MainPage = CreatePage("Main")
+local SettingsPage = CreatePage("Settings")
+local ChangelogPage = CreatePage("Changelog")
+
+--// Create tabs
+local MainTab = CreateSideTab("Main", "▣", "overview")
+local SettingsTab = CreateSideTab("Settings", "⚙", "appearance")
+local ChangelogTab = CreateSideTab("Changelog", "▤", "updates")
+
+local PageInfo = {
+	Main = {
+		Title = "Main",
+		Subtitle = "Starter interface controls",
+	},
+
+	Settings = {
+		Title = "Settings",
+		Subtitle = "Appearance, opacity, and layout",
+	},
+
+	Changelog = {
+		Title = "Changelog",
+		Subtitle = "Everything included in this build",
+	},
+}
+
+local SelectedPage = nil
+
+local function selectPage(Name)
+	if SelectedPage == Name then
+		return
+	end
+
+	SelectedPage = Name
+
+	for PageName, Page in pairs(PagesByName) do
+		Page.Visible = PageName == Name
+	end
+
+	for TabName, Tab in pairs(TabsByName) do
+		if TabName == Name then
+			Tween(Tab, TweenPresets.Page, {
+				BackgroundColor3 = Theme.Accent,
+			})
+		else
+			Tween(Tab, TweenPresets.Page, {
+				BackgroundColor3 = Theme.Tab,
+			})
+		end
+	end
+
+	PageTitle.Text = PageInfo[Name].Title
+	PageSubtitle.Text = PageInfo[Name].Subtitle
+end
+
+MainTab.MouseButton1Click:Connect(function()
+	selectPage("Main")
+end)
+
+SettingsTab.MouseButton1Click:Connect(function()
+	selectPage("Settings")
+end)
+
+ChangelogTab.MouseButton1Click:Connect(function()
+	selectPage("Changelog")
+end)
+
+--// Main page
+local StatusCard = CreateCard(MainPage, 104)
+
+local StatusAccent = New("Frame", {
+	Position = UDim2.fromOffset(0, 17),
+	Size = UDim2.fromOffset(4, 70),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+}, StatusCard)
+
+AddCorner(StatusAccent, 5)
+bindTheme(StatusAccent, "BackgroundColor3", "Accent")
+bindOpacity(StatusAccent, "BackgroundTransparency", 0)
+
+local StatusTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(20, 18),
+	Size = UDim2.new(1, -40, 0, 21),
+
+	BackgroundTransparency = 1,
+	Text = "GUI loaded successfully",
+	TextColor3 = Theme.Text,
+	TextSize = 15,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, StatusCard)
+
+local StatusDescription = New("TextLabel", {
+	Position = UDim2.fromOffset(20, 45),
+	Size = UDim2.new(1, -40, 0, 40),
+
+	BackgroundTransparency = 1,
+	Text = "Drag from the slim sidebar strip, resize from the bottom-right corner, and use Settings to edit the interface.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+}, StatusCard)
+
+bindTheme(StatusTitle, "TextColor3", "Text")
+
+local TestCard = CreateCard(MainPage, 75)
+
+local TestTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -135, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Test control",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, TestCard)
+
+local TestDescription = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -135, 0, 18),
+
+	BackgroundTransparency = 1,
+	Text = "A placeholder interaction.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, TestCard)
+
+bindTheme(TestTitle, "TextColor3", "Text")
+
+local TestButton = CreateButton(
+	TestCard,
+	"Test",
+	UDim2.new(1, -95, 0.5, -18),
+	UDim2.fromOffset(79, 36),
+	Theme.Accent,
+	"Accent"
+)
+
+TestButton.MouseButton1Click:Connect(function()
+	StatusTitle.Text = "Test successful"
+	StatusDescription.Text = "The card/button event system is active. Replace this with your next custom control."
+	TestDescription.Text = "Clicked successfully."
+end)
+
+local DestroyCard = New("Frame", {
+	Size = UDim2.new(1, 0, 0, 77),
+
+	BackgroundColor3 = Theme.DangerCard,
+	BorderSizePixel = 0,
+}, MainPage)
+
+AddCorner(DestroyCard, 13)
+AddStroke(DestroyCard, Theme.Danger, 1, 0.45)
+bindOpacity(DestroyCard, "BackgroundTransparency", 0)
+
+local DestroyTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -145, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Interface controls",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, DestroyCard)
+
+New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -145, 0, 18),
+
+	BackgroundTransparency = 1,
+	Text = "Remove this interface completely.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, DestroyCard)
+
+bindTheme(DestroyTitle, "TextColor3", "Text")
+
+local DestroyButton = CreateButton(
+	DestroyCard,
+	"Destroy GUI",
+	UDim2.new(1, -121, 0.5, -18),
+	UDim2.fromOffset(105, 36),
+	Theme.Danger
+)
+
+--// Settings: colour row helper
+local function CreateColourRow(Parent, DisplayName, ThemeKey, Description)
+	local Card = CreateCard(Parent, 76)
+
+	local NameLabel = New("TextLabel", {
+		Position = UDim2.fromOffset(16, 12),
+		Size = UDim2.new(1, -92, 0, 20),
+
+		BackgroundTransparency = 1,
+		Text = DisplayName,
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, Card)
+
+	New("TextLabel", {
+		Position = UDim2.fromOffset(16, 36),
+		Size = UDim2.new(1, -92, 0, 18),
+
+		BackgroundTransparency = 1,
+		Text = Description,
+		TextColor3 = Theme.SubText,
+		TextSize = 11,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, Card)
+
+	bindTheme(NameLabel, "TextColor3", "Text")
+
+	local Swatch = New("Frame", {
+		Position = UDim2.new(1, -81, 0.5, -15),
+		Size = UDim2.fromOffset(30, 30),
+
+		BackgroundColor3 = Theme[ThemeKey],
+		BorderSizePixel = 0,
+	}, Card)
+
+	AddCorner(Swatch, 9)
+	AddStroke(Swatch, Theme.White, 1, 0.70)
+
+	bindTheme(Swatch, "BackgroundColor3", ThemeKey)
+	bindOpacity(Swatch, "BackgroundTransparency", 0)
+
+	local Eyedropper = New("TextButton", {
+		Name = ThemeKey .. "Eyedropper",
+
+		Position = UDim2.new(1, -43, 0.5, -15),
+		Size = UDim2.fromOffset(30, 30),
+
+		BackgroundColor3 = Theme.Tab,
+		BorderSizePixel = 0,
+
+		AutoButtonColor = false,
+		Text = "⌁",
+		TextColor3 = Theme.Text,
+		TextSize = 18,
+		Font = Enum.Font.GothamBold,
+	}, Card)
+
+	AddCorner(Eyedropper, 9)
+
+	bindTheme(Eyedropper, "BackgroundColor3", "Tab")
+	bindTheme(Eyedropper, "TextColor3", "Text")
+	bindOpacity(Eyedropper, "BackgroundTransparency", 0)
+
+	Eyedropper.MouseEnter:Connect(function()
+		Tween(Eyedropper, TweenPresets.Hover, {
+			BackgroundColor3 = Theme.Accent,
+		})
+	end)
+
+	Eyedropper.MouseLeave:Connect(function()
+		Tween(Eyedropper, TweenPresets.Hover, {
+			BackgroundColor3 = Theme.Tab,
+		})
+	end)
+
+	Eyedropper.MouseButton1Click:Connect(function()
+		openColorPicker(
+			"Edit " .. DisplayName,
+			Theme[ThemeKey],
+			1,
+			function(NewColor, _NewAlpha)
+				Theme[ThemeKey] = NewColor
+				Config.Colors[ThemeKey] = colorToTable(NewColor)
+
+				refreshThemeKey(ThemeKey)
+				saveConfig()
+			end
+		)
+	end)
+
+	return Card
+end
+
+local AppearanceCard = CreateCard(SettingsPage, 75)
+
+local AppearanceTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -32, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Appearance",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, AppearanceCard)
+
+New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -32, 0, 23),
+
+	BackgroundTransparency = 1,
+	Text = "Each fixed-size eyedropper opens the HSV/alpha picker.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, AppearanceCard)
+
+bindTheme(AppearanceTitle, "TextColor3", "Text")
+
+CreateColourRow(
+	SettingsPage,
+	"GUI background",
+	"Background",
+	"Changes the main window background."
+)
+
+CreateColourRow(
+	SettingsPage,
+	"Card background",
+	"Card",
+	"Changes cards and sidebar background."
+)
+
+CreateColourRow(
+	SettingsPage,
+	"Accent colour",
+	"Accent",
+	"Changes active tabs and highlights."
+)
+
+CreateColourRow(
+	SettingsPage,
+	"Tab button colour",
+	"Tab",
+	"Changes inactive tab/control backgrounds."
+)
+
+CreateColourRow(
+	SettingsPage,
+	"Primary text colour",
+	"Text",
+	"Changes headings, icons, and buttons."
+)
+
+--// Opacity card
+local OpacityCard = CreateCard(SettingsPage, 105)
+
+local OpacityTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -82, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Entire GUI opacity",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, OpacityCard)
+
+local OpacityValue = New("TextLabel", {
+	Position = UDim2.new(1, -64, 0, 13),
+	Size = UDim2.fromOffset(48, 20),
+
+	BackgroundTransparency = 1,
+	Text = "0%",
+	TextColor3 = Theme.Accent,
+	TextSize = 13,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Right,
+}, OpacityCard)
+
+New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -32, 0, 17),
+
+	BackgroundTransparency = 1,
+	Text = "Fades the main window, sidebar, cards, tabs, and controls.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, OpacityCard)
+
+bindTheme(OpacityTitle, "TextColor3", "Text")
+bindTheme(OpacityValue, "TextColor3", "Accent")
+
+local OpacityTrack = New("Frame", {
+	Position = UDim2.fromOffset(16, 75),
+	Size = UDim2.new(1, -32, 0, 7),
+
+	BackgroundColor3 = Theme.Background,
+	BorderSizePixel = 0,
+}, OpacityCard)
+
+AddCorner(OpacityTrack, 10)
+bindTheme(OpacityTrack, "BackgroundColor3", "Background")
+bindOpacity(OpacityTrack, "BackgroundTransparency", 0)
+
+local OpacityFill = New("Frame", {
+	Size = UDim2.fromScale(0, 1),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+}, OpacityTrack)
+
+AddCorner(OpacityFill, 10)
+bindTheme(OpacityFill, "BackgroundColor3", "Accent")
+bindOpacity(OpacityFill, "BackgroundTransparency", 0)
+
+local OpacityKnob = New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0, 0, 0.5, 0),
+	Size = UDim2.fromOffset(16, 16),
+
+	BackgroundColor3 = Theme.White,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+}, OpacityTrack)
+
+AddCorner(OpacityKnob, 100)
+bindOpacity(OpacityKnob, "BackgroundTransparency", 0)
+
+--// Fullscreen card
+local FullscreenCard = CreateCard(SettingsPage, 85)
+
+local FullscreenTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -145, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Fullscreen layout",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, FullscreenCard)
+
+New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -145, 0, 30),
+
+	BackgroundTransparency = 1,
+	Text = "Expand the window while keeping its edge padding.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+}, FullscreenCard)
+
+bindTheme(FullscreenTitle, "TextColor3", "Text")
+
+local FullscreenButton = CreateButton(
+	FullscreenCard,
+	"Fullscreen",
+	UDim2.new(1, -122, 0.5, -18),
+	UDim2.fromOffset(106, 36),
+	Theme.Accent,
+	"Accent"
+)
+
+--// Padding card
+local PaddingCard = CreateCard(SettingsPage, 105)
+
+local PaddingTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(16, 13),
+	Size = UDim2.new(1, -83, 0, 20),
+
+	BackgroundTransparency = 1,
+	Text = "Fullscreen edge padding",
+	TextColor3 = Theme.Text,
+	TextSize = 14,
+	Font = Enum.Font.GothamSemibold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, PaddingCard)
+
+local PaddingValue = New("TextLabel", {
+	Position = UDim2.new(1, -64, 0, 13),
+	Size = UDim2.fromOffset(48, 20),
+
+	BackgroundTransparency = 1,
+	Text = "24",
+	TextColor3 = Theme.Accent,
+	TextSize = 13,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Right,
+}, PaddingCard)
+
+New("TextLabel", {
+	Position = UDim2.fromOffset(16, 37),
+	Size = UDim2.new(1, -32, 0, 17),
+
+	BackgroundTransparency = 1,
+	Text = "Distance between the fullscreen GUI and screen edges.",
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, PaddingCard)
+
+bindTheme(PaddingTitle, "TextColor3", "Text")
+bindTheme(PaddingValue, "TextColor3", "Accent")
+
+local PaddingTrack = New("Frame", {
+	Position = UDim2.fromOffset(16, 75),
+	Size = UDim2.new(1, -32, 0, 7),
+
+	BackgroundColor3 = Theme.Background,
+	BorderSizePixel = 0,
+}, PaddingCard)
+
+AddCorner(PaddingTrack, 10)
+bindTheme(PaddingTrack, "BackgroundColor3", "Background")
+bindOpacity(PaddingTrack, "BackgroundTransparency", 0)
+
+local PaddingFill = New("Frame", {
+	Size = UDim2.fromScale(0, 1),
+
+	BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0,
+}, PaddingTrack)
+
+AddCorner(PaddingFill, 10)
+bindTheme(PaddingFill, "BackgroundColor3", "Accent")
+bindOpacity(PaddingFill, "BackgroundTransparency", 0)
+
+local PaddingKnob = New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0, 0, 0.5, 0),
+	Size = UDim2.fromOffset(16, 16),
+
+	BackgroundColor3 = Theme.White,
+	BorderSizePixel = 0,
+
+	AutoButtonColor = false,
+	Text = "",
+}, PaddingTrack)
+
+AddCorner(PaddingKnob, 100)
+bindOpacity(PaddingKnob, "BackgroundTransparency", 0)
+
+--// Changelog
+local ChangelogCard = CreateCard(ChangelogPage, 560)
+
+local ChangelogTitle = New("TextLabel", {
+	Position = UDim2.fromOffset(18, 16),
+	Size = UDim2.new(1, -36, 0, 22),
+
+	BackgroundTransparency = 1,
+	Text = "Current build — complete changelog",
+	TextColor3 = Theme.Text,
+	TextSize = 15,
+	Font = Enum.Font.GothamBold,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, ChangelogCard)
+
+bindTheme(ChangelogTitle, "TextColor3", "Text")
+
+local ChangelogText = [[
+VERSION 1.1 — DRAG + FULL OPACITY FIX
+
+INTERFACE
+• Rounded dark card interface with smooth Quint opening.
+• Main, Settings, and Changelog pages use vertical side tabs.
+• Main and Changelog use folder/document-style symbols.
+• Settings uses a cog icon.
+• Previous UI is removed automatically when the script is rerun.
+
+WINDOW CONTROLS
+• GUI dragging is restored.
+• Only the slim strip below the “goopy” heading drags the GUI.
+• Bottom-right rounded pad resizes the GUI.
+• Minimize control is placed in the top-right corner.
+• A plus button appears at bottom-left after minimizing.
+• Destroy GUI completely removes the ScreenGui.
+• Fullscreen mode and restoring are available in Settings.
+• Fullscreen padding is adjustable.
+
+COLOUR SYSTEM
+• Advanced HSV colour picker replaces RGB text inputs.
+• Drag inside the square to select saturation and brightness.
+• Drag the rainbow bar to select hue.
+• Drag the alpha bar to preview transparency.
+• Picker shows a movable handle, preview swatch, alpha percent,
+  and generated hex value.
+• GUI background, card/sidebar, accent, tab, and text colours
+  each have their own fixed-size eyedropper control.
+
+OPACITY
+• The global opacity slider now affects:
+  - Main background
+  - Sidebar
+  - Cards
+  - Tabs
+  - Buttons
+  - Sliders
+  - Resize pad
+  - Modal background
+• Text stays readable instead of fading with the backgrounds.
+
+CONFIG
+• Auto-saves to goopy/config.json when filesystem APIs exist.
+• Saves position, size, fullscreen setting, padding, opacity,
+  and configured theme colours.
+]]
+
+local ChangelogBody = New("TextLabel", {
+	Position = UDim2.fromOffset(18, 52),
+	Size = UDim2.new(1, -36, 1, -67),
+
+	BackgroundTransparency = 1,
+	Text = ChangelogText,
+	TextColor3 = Theme.SubText,
+	TextSize = 11,
+	Font = Enum.Font.Gotham,
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+}, ChangelogCard)
+
+--// Config helper
+local function saveWindowConfig()
+	if IsFullscreen then
+		Config.Fullscreen = true
+	else
+		Config.Fullscreen = false
+
+		Config.Position.XScale = Main.Position.X.Scale
+		Config.Position.XOffset = Main.Position.X.Offset
+		Config.Position.YScale = Main.Position.Y.Scale
+		Config.Position.YOffset = Main.Position.Y.Offset
+
+		Config.Size.Width = Main.AbsoluteSize.X
+		Config.Size.Height = Main.AbsoluteSize.Y
+	end
+
+	Config.ScreenPadding = ScreenPadding
+	Config.Opacity = GlobalOpacity
+
+	saveConfig()
+end
+
+--// Fullscreen
+local function applyFullscreen()
+	if not IsFullscreen then
+		return
+	end
+
+	Main.AnchorPoint = Vector2.new(0, 0)
+	Main.Position = UDim2.fromOffset(ScreenPadding, ScreenPadding)
+
+	Main.Size = UDim2.new(
+		1,
+		-(ScreenPadding * 2),
+		1,
+		-(ScreenPadding * 2)
+	)
+end
+
+local function setFullscreen(Enabled)
+	if Enabled == IsFullscreen then
+		return
+	end
+
+	IsFullscreen = Enabled
+
+	if IsFullscreen then
+		LastPosition = Main.Position
+		LastSize = Main.Size
+
+		applyFullscreen()
+
+		FullscreenButton.Text = "Restore"
+		ResizePad.Visible = false
+	else
+		Main.AnchorPoint = Vector2.new(0.5, 0.5)
+		Main.Position = LastPosition
+		Main.Size = LastSize
+
+		FullscreenButton.Text = "Fullscreen"
+		ResizePad.Visible = true
+	end
+
+	saveWindowConfig()
+end
+
+--// Settings sliders
+local MovingOpacity = false
+local MovingPadding = false
+
+local function setOpacity(Value)
+	GlobalOpacity = math.clamp(Value, 0, 0.85)
+
+	local Alpha = GlobalOpacity / 0.85
+
+	OpacityFill.Size = UDim2.fromScale(Alpha, 1)
+	OpacityKnob.Position = UDim2.new(Alpha, 0, 0.5, 0)
+	OpacityValue.Text = tostring(math.floor(GlobalOpacity * 100 + 0.5)) .. "%"
+
+	Config.Opacity = GlobalOpacity
+
+	applyGlobalOpacity()
+	saveConfig()
+end
+
+local function setPadding(Value)
+	ScreenPadding = math.clamp(math.floor(Value + 0.5), 0, 100)
+
+	local Alpha = ScreenPadding / 100
+
+	PaddingFill.Size = UDim2.fromScale(Alpha, 1)
+	PaddingKnob.Position = UDim2.new(Alpha, 0, 0.5, 0)
+	PaddingValue.Text = tostring(ScreenPadding)
+
+	if IsFullscreen then
+		applyFullscreen()
+	end
+
+	Config.ScreenPadding = ScreenPadding
+	saveConfig()
+end
+
+local function updateOpacityFromMouse(MouseX)
+	local Position = OpacityTrack.AbsolutePosition
+	local Size = OpacityTrack.AbsoluteSize
+
+	if Size.X <= 0 then
+		return
+	end
+
+	local Alpha = math.clamp(
+		(MouseX - Position.X) / Size.X,
+		0,
+		1
+	)
+
+	setOpacity(Alpha * 0.85)
+end
+
+local function updatePaddingFromMouse(MouseX)
+	local Position = PaddingTrack.AbsolutePosition
+	local Size = PaddingTrack.AbsoluteSize
+
+	if Size.X <= 0 then
+		return
+	end
+
+	local Alpha = math.clamp(
+		(MouseX - Position.X) / Size.X,
+		0,
+		1
+	)
+
+	setPadding(Alpha * 100)
+end
+
+OpacityTrack.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		MovingOpacity = true
+		updateOpacityFromMouse(Input.Position.X)
+	end
+end)
+
+OpacityKnob.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		MovingOpacity = true
+	end
+end)
+
+PaddingTrack.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		MovingPadding = true
+		updatePaddingFromMouse(Input.Position.X)
+	end
+end)
+
+PaddingKnob.InputBegan:Connect(function(Input)
+	if Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch then
+
+		MovingPadding = true
+	end
+end)
+
+--// Drag state
+local Dragging = false
+local DragStart
+local DragOrigin
+
+DragStrip.InputBegan:Connect(function(Input)
+	if ColorPickerOpen or IsFullscreen then
+		return
+	end
+
+	if Input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and Input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	Dragging = true
+	DragStart = Input.Position
+	DragOrigin = Main.Position
+end)
+
+--// Resize state
+local Resizing = false
+local ResizeStartMouse
+local ResizeStartSize
+
+ResizePad.InputBegan:Connect(function(Input)
+	if ColorPickerOpen or IsFullscreen then
+		return
+	end
+
+	if Input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and Input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	Resizing = true
+	ResizeStartMouse = Input.Position
+	ResizeStartSize = Main.AbsoluteSize
+end)
+
+--// Central movement handler
+UserInputService.InputChanged:Connect(function(Input)
+	if Input.UserInputType ~= Enum.UserInputType.MouseMovement
+		and Input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	-- Colour-picker input has priority.
+	if ColorPickerOpen then
+		if PickingSaturationValue then
+			setSaturationValue(Input.Position)
+		end
+
+		if PickingHue then
+			setHue(Input.Position)
+		end
+
+		if PickingAlpha then
+			setAlpha(Input.Position)
+		end
+
+		return
+	end
+
+	if MovingOpacity then
+		updateOpacityFromMouse(Input.Position.X)
+	end
+
+	if MovingPadding then
+		updatePaddingFromMouse(Input.Position.X)
+	end
+
+	if Dragging then
+		local Delta = Input.Position - DragStart
+
+		Main.Position = UDim2.new(
+			DragOrigin.X.Scale,
+			DragOrigin.X.Offset + Delta.X,
+			DragOrigin.Y.Scale,
+			DragOrigin.Y.Offset + Delta.Y
+		)
+
+		LastPosition = Main.Position
+	end
+
+	if Resizing then
+		local Delta = Input.Position - ResizeStartMouse
+
+		local NewWidth = math.clamp(
+			ResizeStartSize.X + Delta.X,
+			MIN_WIDTH,
+			MAX_WIDTH
+		)
+
+		local NewHeight = math.clamp(
+			ResizeStartSize.Y + Delta.Y,
+			MIN_HEIGHT,
+			MAX_HEIGHT
+		)
+
+		Main.Size = UDim2.fromOffset(NewWidth, NewHeight)
+		LastSize = Main.Size
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(Input)
+	if Input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and Input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	if ColorPickerOpen then
+		PickingSaturationValue = false
+		PickingHue = false
+		PickingAlpha = false
+		return
+	end
+
+	local SaveWindow = Dragging or Resizing
+
+	Dragging = false
+	Resizing = false
+	MovingOpacity = false
+	MovingPadding = false
+
+	if SaveWindow then
+		saveWindowConfig()
+	end
+end)
+
+--// Minimize/reopen/destroy
+local function closeWindow()
+	if not WindowOpen then
+		return
+	end
+
+	WindowOpen = false
+
+	local Closing = Tween(Main, TweenPresets.Close, {
+		Size = UDim2.fromOffset(0, 0),
+		BackgroundTransparency = 1,
+	})
+
+	Closing.Completed:Once(function()
+		if ScreenGui and ScreenGui.Parent then
+			Main.Visible = false
+			OpenButton.Visible = true
+		end
+	end)
+end
+
+local function openWindow()
+	if WindowOpen then
+		return
+	end
+
+	WindowOpen = true
+	OpenButton.Visible = false
+	Main.Visible = true
+
+	if IsFullscreen then
+		applyFullscreen()
+	else
+		Main.Size = UDim2.fromOffset(0, 0)
+
+		Tween(Main, TweenPresets.Open, {
+			Size = LastSize,
+		})
+	end
+
+	applyGlobalOpacity()
+end
+
+local function destroyUI()
+	WindowOpen = false
+	OpenButton.Visible = false
+
+	saveWindowConfig()
+
+	local Closing = Tween(Main, TweenPresets.Close, {
+		Size = UDim2.fromOffset(0, 0),
+		BackgroundTransparency = 1,
+	})
+
+	Closing.Completed:Once(function()
+		if ScreenGui then
+			ScreenGui:Destroy()
+		end
+	end)
+end
+
+MinimizeButton.MouseButton1Click:Connect(closeWindow)
+OpenButton.MouseButton1Click:Connect(openWindow)
+DestroyButton.MouseButton1Click:Connect(destroyUI)
+
+FullscreenButton.MouseButton1Click:Connect(function()
+	setFullscreen(not IsFullscreen)
+end)
+
+--// Hover effects
+OpenButton.MouseEnter:Connect(function()
+	Tween(OpenButton, TweenPresets.Hover, {
+		BackgroundColor3 = Theme.Accent,
+	})
+end)
+
+OpenButton.MouseLeave:Connect(function()
+	Tween(OpenButton, TweenPresets.Hover, {
+		BackgroundColor3 = Theme.Card,
+	})
+end)
+
+MinimizeButton.MouseEnter:Connect(function()
+	Tween(MinimizeButton, TweenPresets.Hover, {
+		BackgroundColor3 = Theme.Accent,
+	})
+end)
+
+MinimizeButton.MouseLeave:Connect(function()
+	Tween(MinimizeButton, TweenPresets.Hover, {
+		BackgroundColor3 = Theme.Tab,
+	})
+end)
+
+ResizePad.MouseEnter:Connect(function()
+	if not IsFullscreen then
+		Tween(ResizePad, TweenPresets.Hover, {
+			BackgroundColor3 = Theme.Accent,
+		})
+	end
+end)
+
+ResizePad.MouseLeave:Connect(function()
+	Tween(ResizePad, TweenPresets.Hover, {
+		BackgroundColor3 = Theme.Tab,
+	})
+end)
+
+--// Initialise controls
+setOpacity(GlobalOpacity)
+setPadding(ScreenPadding)
+selectPage("Main")
+
+if IsFullscreen then
+	FullscreenButton.Text = "Restore"
+	ResizePad.Visible = false
+
+	task.defer(function()
+		applyFullscreen()
+		applyGlobalOpacity()
+	end)
+else
+	task.wait(0.15)
+
+	Tween(Main, TweenPresets.Open, {
+		Size = LastSize,
+	})
+
+	applyGlobalOpacity()
+end
